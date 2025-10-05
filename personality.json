@@ -1,0 +1,24 @@
+{
+  "_comment": "Agent Store registry for personalities used by DecypherTek AI",
+  "_version": "1.0.0",
+  "_last_updated": "2025-10-05",
+
+  "default_agent": "adminotaur",
+
+  "agents": {
+    "adminotaur": {
+      "id": "adminotaur",
+      "name": "Adminotaur Personality",
+      "description": "Primary unified personality for system integration (Apps, MCP, RAG, Settings)",
+
+      "repo_url": "https://github.com/decyphertek-io/agent-store",
+      "zip_url": "https://codeload.github.com/decyphertek-io/agent-store/zip/refs/heads/main",
+
+      "folder_path": "adminotaur/",
+      "module_path": "adminotaur/adminotaur.py",
+      "class_name": "AdminotaurAgent",
+
+      "enable_by_default": true
+    }
+  }
+}
