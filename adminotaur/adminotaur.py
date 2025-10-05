@@ -30,6 +30,11 @@ class AdminotaurAgent:
         self.user_notes_path = self.notes_dir / "user_notes.txt"
         self.agent_notes_path = self.notes_dir / "notes.md"
         
+        # New notes directory structure
+        self.notes_folder = self.notes_dir / "notes"
+        self.admin_file = self.notes_folder / "admin.txt"
+        self.quicknotes_file = self.notes_folder / "quicknotes.md"
+        
         # Ensure notes directory exists
         self.notes_dir.mkdir(parents=True, exist_ok=True)
         
@@ -269,7 +274,7 @@ class AdminotaurAgent:
             return f"❌ Health check failed: {e}"
     
     def _search_notes(self, query: str) -> str:
-        """Search through user notes and agent notes for relevant information."""
+        """Search through user notes, agent notes, and quicknotes for relevant information."""
         try:
             results = []
             
@@ -291,6 +296,17 @@ class AdminotaurAgent:
                     results.append("\n🤖 **Found in Agent Notes:**")
                     # Find relevant lines
                     lines = agent_notes.split('\n')
+                    for i, line in enumerate(lines):
+                        if query.lower() in line.lower():
+                            results.append(f"  Line {i+1}: {line.strip()}")
+            
+            # Search quicknotes
+            if self.quicknotes_file.exists():
+                quicknotes = self.quicknotes_file.read_text(encoding="utf-8")
+                if query.lower() in quicknotes.lower():
+                    results.append("\n✏️ **Found in Quicknotes:**")
+                    # Find relevant lines
+                    lines = quicknotes.split('\n')
                     for i, line in enumerate(lines):
                         if query.lower() in line.lower():
                             results.append(f"  Line {i+1}: {line.strip()}")
@@ -342,7 +358,7 @@ class AdminotaurAgent:
             return f"❌ Error writing note: {e}"
     
     def _read_notes(self) -> str:
-        """Read all available notes (user and agent)."""
+        """Read all available notes (user, agent, and quicknotes)."""
         try:
             result_lines = ["📋 **Available Notes:**\n"]
             
@@ -361,8 +377,18 @@ class AdminotaurAgent:
                 agent_notes = self.agent_notes_path.read_text(encoding="utf-8")
                 result_lines.append("## 🤖 Agent Notes:")
                 result_lines.append(agent_notes)
+                result_lines.append("")
             else:
                 result_lines.append("## 🤖 Agent Notes: No notes found")
+                result_lines.append("")
+            
+            # Read quicknotes from the new structure
+            if self.quicknotes_file.exists():
+                quicknotes = self.quicknotes_file.read_text(encoding="utf-8")
+                result_lines.append("## ✏️ Quicknotes:")
+                result_lines.append(quicknotes)
+            else:
+                result_lines.append("## ✏️ Quicknotes: No notes found")
             
             return "\n".join(result_lines)
             
