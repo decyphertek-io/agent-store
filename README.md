@@ -1,5 +1,5 @@
 # agent-store
-A collection of Agent personalities. 
+A collection of Agent personalities that work with Decyphertek AI. 
 
 # LangChain based Agent Store
 
