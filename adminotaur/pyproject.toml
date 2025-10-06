@@ -13,7 +13,3 @@ python = "^3.10"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-[tool.poetry.virtualenvs]
-in-project = true
-create = true
-
