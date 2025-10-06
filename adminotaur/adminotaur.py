@@ -211,7 +211,7 @@ class AdminotaurAgent:
                 return self._read_notes()
             else:
                 return self._get_notes_help()
-        
+            
         # Default response if no specific action is taken
         return "I can help with launching applications, managing notes, and system diagnostics. What would you like to do?"
     
