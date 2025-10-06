@@ -184,9 +184,16 @@ class AdminotaurAgent:
                 # Extract search query from the message
                 query = user_message.replace("rag", "").replace("document", "").replace("search", "").replace("query", "").replace("find", "").strip()
                 if query:
-                    return self.query_rag_documents(query)
+                    return self.search_rag_documents(query)
                 else:
                     return "Please provide a search query. Example: 'rag search python programming'"
+            elif "read" in message_lower:
+                # Extract filename from the message
+                filename = user_message.replace("rag", "").replace("document", "").replace("read", "").strip()
+                if filename:
+                    return self.read_rag_document(filename)
+                else:
+                    return "Please provide a filename. Example: 'rag read myfile.txt'"
             elif "list" in message_lower or "show" in message_lower:
                 return self.list_rag_documents()
             elif "add" in message_lower or "upload" in message_lower:
@@ -504,6 +511,28 @@ class AdminotaurAgent:
         except Exception as e:
             return f"❌ Failed to delete RAG document: {e}"
     
+    def read_rag_document(self, filename: str) -> str:
+        """Read a specific document from storage"""
+        try:
+            parameters = {
+                "filename": filename
+            }
+            result = self._call_rag_mcp_tool("read_document", parameters)
+            return result
+        except Exception as e:
+            return f"❌ Failed to read RAG document: {e}"
+    
+    def search_rag_documents(self, query: str) -> str:
+        """Search through stored documents by content"""
+        try:
+            parameters = {
+                "query": query
+            }
+            result = self._call_rag_mcp_tool("search_documents", parameters)
+            return result
+        except Exception as e:
+            return f"❌ Failed to search RAG documents: {e}"
+    
     def _search_notes(self, query: str) -> str:
         """Search through user notes, agent notes, and quicknotes for relevant information."""
         try:
@@ -635,6 +664,10 @@ class AdminotaurAgent:
 - `document query <query>` - Query the RAG database
 - `documents find <query>` - Find information in documents
 
+**Read Documents:**
+- `rag read <filename>` - Read a specific document from storage
+- `document read <filename>` - Read document content
+
 **List Documents:**
 - `rag list` - List all documents in RAG database
 - `documents show` - Show all available documents
@@ -645,6 +678,7 @@ class AdminotaurAgent:
 
 **Examples:**
 - `rag search python programming`
+- `rag read myfile.txt`
 - `document query machine learning`
 - `rag list`"""
     
