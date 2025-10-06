@@ -18,11 +18,12 @@ class AdminotaurAgent:
         """
         self.main_class = main_class
         self.page = main_class.page
-        self.app_store_path = Path("./apps") # Assuming apps are in an 'apps' directory relative to the main app
+        # App store path - look in the store directory
+        self.app_store_path = Path(__file__).parent.parent / "app"
         self.available_apps = self._discover_flet_apps()
         
         # Discover MCP servers in the store directory
-        self.mcp_store_path = Path(__file__).parent.parent.parent / "store" / "mcp"
+        self.mcp_store_path = Path(__file__).parent.parent / "mcp"
         self.available_mcp_servers = self._discover_mcp_servers()
         
         # Note management paths
@@ -180,7 +181,14 @@ class AdminotaurAgent:
             
         # Check for RAG-related commands
         if "rag" in message_lower or "document" in message_lower or "documents" in message_lower:
-            if "search" in message_lower or "query" in message_lower or "find" in message_lower:
+            if "analyze" in message_lower or "analysis" in message_lower:
+                # Extract filename from the message
+                filename = user_message.replace("rag", "").replace("document", "").replace("analyze", "").replace("analysis", "").strip()
+                if filename:
+                    return self.analyze_rag_document(filename)
+                else:
+                    return "Please provide a filename. Example: 'rag analyze description.txt'"
+            elif "search" in message_lower or "query" in message_lower or "find" in message_lower:
                 # Extract search query from the message
                 query = user_message.replace("rag", "").replace("document", "").replace("search", "").replace("query", "").replace("find", "").strip()
                 if query:
@@ -495,8 +503,32 @@ class AdminotaurAgent:
         """List all documents in the RAG database"""
         try:
             parameters = {}
-            result = self._call_rag_mcp_tool("list_documents", parameters)
-            return result
+            mcp_response = self._call_rag_mcp_tool("list_documents", parameters)
+            
+            # Create combined response with MCP server response and Adminotaur's analysis
+            response_parts = []
+            
+            # Add MCP Server response bubble
+            mcp_bubble = self._create_mcp_response_bubble(mcp_response)
+            response_parts.append(mcp_bubble)
+            
+            # Add Adminotaur's analysis
+            if mcp_response.get("success", False):
+                result = mcp_response.get("result", {})
+                if result.get("success", False):
+                    adminotaur_analysis = self._format_list_result(result)
+                    adminotaur_bubble = self._create_adminotaur_response_bubble(adminotaur_analysis)
+                    response_parts.append(adminotaur_bubble)
+                else:
+                    error_bubble = self._create_adminotaur_response_bubble(f"❌ RAG list failed: {result.get('error', 'Unknown error')}")
+                    response_parts.append(error_bubble)
+            else:
+                error_bubble = self._create_adminotaur_response_bubble(f"❌ Failed to call RAG MCP tool: {mcp_response.get('error', 'Unknown error')}")
+                response_parts.append(error_bubble)
+            
+            # Return combined response
+            return "\n\n---\n\n".join(response_parts)
+                
         except Exception as e:
             return f"❌ Failed to list RAG documents: {e}"
     
@@ -517,8 +549,32 @@ class AdminotaurAgent:
             parameters = {
                 "filename": filename
             }
-            result = self._call_rag_mcp_tool("read_document", parameters)
-            return result
+            mcp_response = self._call_rag_mcp_tool("read_document", parameters)
+            
+            # Create combined response with MCP server response and Adminotaur's analysis
+            response_parts = []
+            
+            # Add MCP Server response bubble
+            mcp_bubble = self._create_mcp_response_bubble(mcp_response)
+            response_parts.append(mcp_bubble)
+            
+            # Add Adminotaur's analysis
+            if mcp_response.get("success", False):
+                result = mcp_response.get("result", {})
+                if result.get("success", False):
+                    adminotaur_analysis = self._format_read_result(result)
+                    adminotaur_bubble = self._create_adminotaur_response_bubble(adminotaur_analysis)
+                    response_parts.append(adminotaur_bubble)
+                else:
+                    error_bubble = self._create_adminotaur_response_bubble(f"❌ RAG read failed: {result.get('error', 'Unknown error')}")
+                    response_parts.append(error_bubble)
+            else:
+                error_bubble = self._create_adminotaur_response_bubble(f"❌ Failed to call RAG MCP tool: {mcp_response.get('error', 'Unknown error')}")
+                response_parts.append(error_bubble)
+            
+            # Return combined response
+            return "\n\n---\n\n".join(response_parts)
+                
         except Exception as e:
             return f"❌ Failed to read RAG document: {e}"
     
@@ -528,10 +584,328 @@ class AdminotaurAgent:
             parameters = {
                 "query": query
             }
-            result = self._call_rag_mcp_tool("search_documents", parameters)
-            return result
+            mcp_response = self._call_rag_mcp_tool("search_documents", parameters)
+            
+            # Create combined response with MCP server response and Adminotaur's analysis
+            response_parts = []
+            
+            # Add MCP Server response bubble
+            mcp_bubble = self._create_mcp_response_bubble(mcp_response)
+            response_parts.append(mcp_bubble)
+            
+            # Add Adminotaur's analysis
+            if mcp_response.get("success", False):
+                result = mcp_response.get("result", {})
+                if result.get("success", False):
+                    adminotaur_analysis = self._format_search_result(result)
+                    adminotaur_bubble = self._create_adminotaur_response_bubble(adminotaur_analysis)
+                    response_parts.append(adminotaur_bubble)
+                else:
+                    error_bubble = self._create_adminotaur_response_bubble(f"❌ RAG search failed: {result.get('error', 'Unknown error')}")
+                    response_parts.append(error_bubble)
+            else:
+                error_bubble = self._create_adminotaur_response_bubble(f"❌ Failed to call RAG MCP tool: {mcp_response.get('error', 'Unknown error')}")
+                response_parts.append(error_bubble)
+            
+            # Return combined response
+            return "\n\n---\n\n".join(response_parts)
+                
         except Exception as e:
             return f"❌ Failed to search RAG documents: {e}"
+    
+    def analyze_rag_document(self, filename: str) -> str:
+        """Analyze document structure, format, and extract metadata (netrunner-style)"""
+        try:
+            parameters = {
+                "filename": filename
+            }
+            mcp_response = self._call_rag_mcp_tool("analyze_document", parameters)
+            
+            # Create combined response with MCP server response and Adminotaur's analysis
+            response_parts = []
+            
+            # Add MCP Server response bubble
+            mcp_bubble = self._create_mcp_response_bubble(mcp_response)
+            response_parts.append(mcp_bubble)
+            
+            # Add Adminotaur's analysis
+            if mcp_response.get("success", False):
+                result = mcp_response.get("result", {})
+                if result.get("success", False):
+                    adminotaur_analysis = self._format_analysis_result(result)
+                    adminotaur_bubble = self._create_adminotaur_response_bubble(adminotaur_analysis)
+                    response_parts.append(adminotaur_bubble)
+                else:
+                    error_bubble = self._create_adminotaur_response_bubble(f"❌ RAG analysis failed: {result.get('error', 'Unknown error')}")
+                    response_parts.append(error_bubble)
+            else:
+                error_bubble = self._create_adminotaur_response_bubble(f"❌ Failed to call RAG MCP tool: {mcp_response.get('error', 'Unknown error')}")
+                response_parts.append(error_bubble)
+            
+            # Return combined response
+            return "\n\n---\n\n".join(response_parts)
+                
+        except Exception as e:
+            return f"❌ Failed to analyze RAG document: {e}"
+    
+    def _call_rag_mcp_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """Call a RAG MCP tool and return the raw result for MCP server display"""
+        try:
+            # Import the RAG MCP server functions directly
+            rag_path = Path(__file__).parent.parent / "mcp" / "rag"
+            sys.path.insert(0, str(rag_path))
+            
+            print(f"[Adminotaur] Calling RAG MCP tool: {tool_name} with params: {parameters}")
+            
+            if tool_name == "analyze_document":
+                from rag import analyze_document
+                result = analyze_document(parameters.get("filename", ""))
+            elif tool_name == "read_document":
+                from rag import read_document
+                result = read_document(parameters.get("filename", ""))
+            elif tool_name == "search_documents":
+                from rag import search_documents
+                result = search_documents(parameters.get("query", ""))
+            elif tool_name == "list_documents":
+                from rag import list_documents
+                result = list_documents()
+            elif tool_name == "add_document":
+                from rag import add_document
+                result = add_document(
+                    parameters.get("content", ""),
+                    parameters.get("filename", ""),
+                    parameters.get("source", "adminotaur")
+                )
+            elif tool_name == "delete_document":
+                from rag import delete_document
+                result = delete_document(parameters.get("doc_id", ""))
+            else:
+                return {
+                    "success": False,
+                    "error": f"Unknown RAG tool: {tool_name}",
+                    "tool_name": tool_name,
+                    "parameters": parameters
+                }
+            
+            print(f"[Adminotaur] RAG MCP tool result: {result}")
+            
+            # Return the raw result for MCP server display
+            return {
+                "success": True,
+                "tool_name": tool_name,
+                "parameters": parameters,
+                "result": result,
+                "server": "RAG"
+            }
+                
+        except Exception as e:
+            print(f"[Adminotaur] Error calling RAG tool {tool_name}: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "tool_name": tool_name,
+                "parameters": parameters,
+                "server": "RAG"
+            }
+    
+    def _display_mcp_response(self, mcp_response: Dict[str, Any]) -> None:
+        """Store MCP server response for chat display"""
+        try:
+            # Store the MCP response in a way that the chat system can access it
+            if not hasattr(self, '_mcp_responses'):
+                self._mcp_responses = []
+            
+            server_name = mcp_response.get("server", "MCP Server")
+            tool_name = mcp_response.get("tool_name", "Unknown Tool")
+            
+            if mcp_response.get("success", False):
+                result = mcp_response.get("result", {})
+                if isinstance(result, dict):
+                    # Format the result nicely
+                    response_text = f"**{server_name}: {tool_name}**\n\n"
+                    response_text += f"✅ **Status**: Success\n"
+                    response_text += f"🔧 **Tool**: {tool_name}\n"
+                    response_text += f"📊 **Parameters**: {mcp_response.get('parameters', {})}\n\n"
+                    
+                    # Add the actual result
+                    if result.get("success", False):
+                        response_text += f"📋 **Result**:\n```json\n{json.dumps(result, indent=2)}\n```"
+                    else:
+                        response_text += f"❌ **Error**: {result.get('error', 'Unknown error')}"
+                else:
+                    response_text = f"**{server_name}: {tool_name}**\n\n```\n{str(result)}\n```"
+            else:
+                response_text = f"**{server_name}: {tool_name}**\n\n❌ **Error**: {mcp_response.get('error', 'Unknown error')}"
+            
+            # Store the response for the chat system to display
+            self._mcp_responses.append({
+                "type": "mcp_response",
+                "content": response_text,
+                "server": server_name,
+                "tool": tool_name
+            })
+            
+            print(f"[MCP Response] {response_text}")
+                
+        except Exception as e:
+            print(f"[Adminotaur] Error storing MCP response: {e}")
+    
+    def get_mcp_responses(self) -> List[Dict[str, Any]]:
+        """Get stored MCP responses and clear them"""
+        responses = getattr(self, '_mcp_responses', [])
+        self._mcp_responses = []
+        return responses
+    
+    def _create_mcp_response_bubble(self, mcp_response: Dict[str, Any]) -> str:
+        """Create MCP server response bubble content"""
+        try:
+            server_name = mcp_response.get("server", "MCP Server")
+            tool_name = mcp_response.get("tool_name", "Unknown Tool")
+            
+            bubble_content = f"**MCP Server: {server_name} Chat**\n\n"
+            bubble_content += f"🔧 **Tool**: {tool_name}\n"
+            bubble_content += f"📊 **Parameters**: {mcp_response.get('parameters', {})}\n\n"
+            
+            if mcp_response.get("success", False):
+                result = mcp_response.get("result", {})
+                bubble_content += f"✅ **Status**: Success\n\n"
+                bubble_content += f"📋 **Raw Response**:\n```json\n{json.dumps(result, indent=2)}\n```"
+            else:
+                bubble_content += f"❌ **Status**: Failed\n"
+                bubble_content += f"❌ **Error**: {mcp_response.get('error', 'Unknown error')}"
+            
+            return bubble_content
+            
+        except Exception as e:
+            return f"**MCP Server: RAG Chat**\n\n❌ Error formatting MCP response: {e}"
+    
+    def _create_adminotaur_response_bubble(self, content: str) -> str:
+        """Create Adminotaur response bubble content"""
+        return f"**Adminotaur**\n\n{content}"
+    
+    def _format_analysis_result(self, result: Dict[str, Any]) -> str:
+        """Format document analysis result for display"""
+        try:
+            analysis = result.get("analysis", {})
+            metadata = result.get("metadata", {})
+            
+            output = f"🔍 **Document Analysis: {result.get('filename', 'Unknown')}**\n\n"
+            
+            # Format information
+            format_info = analysis.get("format", {})
+            output += f"📄 **Format**: {format_info.get('description', 'Unknown')} ({format_info.get('type', 'unknown')})\n"
+            
+            # Statistics
+            stats = analysis.get("stats", {})
+            output += f"📊 **Statistics**:\n"
+            output += f"  - Characters: {stats.get('char_count', 0):,}\n"
+            output += f"  - Words: {stats.get('word_count', 0):,}\n"
+            output += f"  - Lines: {stats.get('line_count', 0):,}\n"
+            output += f"  - Paragraphs: {stats.get('paragraph_count', 0):,}\n\n"
+            
+            # Topics
+            topics = analysis.get("topics", [])
+            if topics:
+                output += f"🏷️ **Key Topics**: {', '.join(topics[:5])}\n\n"
+            
+            # Entities
+            entities = analysis.get("entities", {})
+            if any(entities.values()):
+                output += f"🔗 **Extracted Entities**:\n"
+                for entity_type, values in entities.items():
+                    if values:
+                        output += f"  - {entity_type.title()}: {len(values)} found\n"
+                output += "\n"
+            
+            # Readability
+            readability = analysis.get("readability", {})
+            if readability and "score" in readability:
+                output += f"📖 **Readability**: {readability.get('level', 'Unknown')} ({readability.get('score', 0)}/100)\n"
+                output += f"  - Avg words per sentence: {readability.get('avg_words_per_sentence', 0)}\n"
+                output += f"  - Avg chars per word: {readability.get('avg_chars_per_word', 0)}\n\n"
+            
+            # Structure
+            structure = analysis.get("structure", {})
+            if structure:
+                headings = structure.get("headings", [])
+                if headings:
+                    output += f"📋 **Structure**: {len(headings)} headings found\n"
+                
+                code_blocks = structure.get("code_blocks", [])
+                if code_blocks:
+                    output += f"💻 **Code Blocks**: {len(code_blocks)} found\n"
+                
+                lists = structure.get("lists", [])
+                if lists:
+                    output += f"📝 **Lists**: {len(lists)} found\n"
+            
+            return output
+            
+        except Exception as e:
+            return f"❌ Error formatting analysis result: {e}"
+    
+    def _format_read_result(self, result: Dict[str, Any]) -> str:
+        """Format document read result for display"""
+        try:
+            content = result.get("content", "")
+            filename = result.get("filename", "Unknown")
+            size = result.get("size", 0)
+            
+            # Truncate very long content
+            if len(content) > 2000:
+                content = content[:2000] + "\n\n... (content truncated)"
+            
+            return f"📖 **Document: {filename}** ({size:,} chars)\n\n{content}"
+            
+        except Exception as e:
+            return f"❌ Error formatting read result: {e}"
+    
+    def _format_search_result(self, result: Dict[str, Any]) -> str:
+        """Format document search result for display"""
+        try:
+            query = result.get("query", "")
+            results = result.get("results", [])
+            total = result.get("total_matches", 0)
+            
+            if total == 0:
+                return f"🔍 **Search Results for '{query}'**: No matches found"
+            
+            output = f"🔍 **Search Results for '{query}'**: {total} matches found\n\n"
+            
+            for i, match in enumerate(results[:5], 1):  # Show top 5 results
+                filename = match.get("filename", "Unknown")
+                context = match.get("context", "")
+                output += f"**{i}. {filename}**\n"
+                output += f"```\n{context}\n```\n\n"
+            
+            if total > 5:
+                output += f"... and {total - 5} more results"
+            
+            return output
+            
+        except Exception as e:
+            return f"❌ Error formatting search result: {e}"
+    
+    def _format_list_result(self, result: Dict[str, Any]) -> str:
+        """Format document list result for display"""
+        try:
+            documents = result.get("documents", [])
+            
+            if not documents:
+                return "📚 **RAG Documents**: No documents found"
+            
+            output = f"📚 **RAG Documents**: {len(documents)} documents\n\n"
+            
+            for doc in documents:
+                filename = doc.get("filename", "Unknown")
+                size = doc.get("size", 0)
+                source = doc.get("source", "unknown")
+                output += f"📄 **{filename}** ({size:,} chars) - {source}\n"
+            
+            return output
+            
+        except Exception as e:
+            return f"❌ Error formatting list result: {e}"
     
     def _search_notes(self, query: str) -> str:
         """Search through user notes, agent notes, and quicknotes for relevant information."""
@@ -659,6 +1033,11 @@ class AdminotaurAgent:
         """Get help information for RAG document commands."""
         return """📚 **RAG Document Commands:**
 
+**Analyze Documents (Netrunner-style):**
+- `rag analyze <filename>` - Deep analysis of document structure, format, and metadata
+- `document analysis <filename>` - Extract entities, topics, readability metrics
+- `documents analyze <filename>` - Cyberpunk-style document intelligence
+
 **Search Documents:**
 - `rag search <query>` - Search through uploaded documents
 - `document query <query>` - Query the RAG database
@@ -677,10 +1056,11 @@ class AdminotaurAgent:
 - Documents are automatically processed and indexed
 
 **Examples:**
-- `rag search python programming`
-- `rag read myfile.txt`
-- `document query machine learning`
-- `rag list`"""
+- `rag analyze description.txt` - Full document analysis
+- `rag search python programming` - Search content
+- `rag read myfile.txt` - Read document
+- `document analysis config.json` - Analyze configuration file
+- `rag list` - List all documents"""
     
     def _get_notes_help(self) -> str:
         """Get help information about note management."""
