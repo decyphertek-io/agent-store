@@ -42,15 +42,14 @@ class AdminotaurAgent:
         # Ensure notes directory exists
         self.notes_dir.mkdir(parents=True, exist_ok=True)
         
-        print(f"[Adminotaur] Initialized. Discovered apps: {list(self.available_apps.keys())}")
-        print(f"[Adminotaur] Discovered MCP servers: {list(self.available_mcp_servers.keys())}")
-        print(f"[Adminotaur] Notes directory: {self.notes_dir}")
+        # Debug info removed for cleaner output
 
     def _discover_flet_apps(self) -> Dict[str, Dict]:
         """Discover available Flet applications from the app store"""
         apps = {}
         if not self.app_store_path.exists():
-            print(f"[Adminotaur] App store not found at {self.app_store_path}")
+            if getattr(self, "verbose", False):
+                print(f"[Adminotaur] App store not found at {self.app_store_path}")
             return apps
         
         for app_dir in self.app_store_path.iterdir():
@@ -70,13 +69,18 @@ class AdminotaurAgent:
         """Discover available MCP servers from the MCP store"""
         servers = {}
         if not self.mcp_store_path.exists():
-            print(f"[Adminotaur] MCP store not found at {self.mcp_store_path}")
+            if getattr(self, "verbose", False):
+                print(f"[Adminotaur] MCP store not found at {self.mcp_store_path}")
             return servers
         
         for server_dir in self.mcp_store_path.iterdir():
             if server_dir.is_dir():
                 server_name = server_dir.name
-                server_script = server_dir / f"{server_name}.py"
+                # Look for web.py in web-search directory, or {server_name}.py in other directories
+                if server_name == "web-search":
+                    server_script = server_dir / "web.py"
+                else:
+                    server_script = server_dir / f"{server_name}.py"
                 
                 if server_script.exists():
                     servers[server_name.lower()] = {
@@ -140,12 +144,12 @@ class AdminotaurAgent:
         except Exception as e:
             return f"❌ Error calling MCP server '{server_id}': {e}"
 
-    async def chat(self, messages: List[Dict], user_message: str) -> str:
+    def chat(self, messages: List[Dict], user_message: str) -> str:
         """
         Main chat method for the Adminotaur agent.
         Determines if a tool needs to be used, like launching an app.
         """
-        print("[Adminotaur] Thinking...")
+        # Thinking...
         
         message_lower = user_message.lower()
         app_launch_keywords = ["run", "launch", "start", "open", "execute"]
@@ -154,7 +158,8 @@ class AdminotaurAgent:
         # Check for web search intent
         if any(keyword in message_lower for keyword in web_search_keywords):
             if "web-search" in self.available_mcp_servers:
-                print(f"[Adminotaur] Detected web search request, using web-search MCP server")
+                if getattr(self, "verbose", False):
+                    print(f"[Adminotaur] Detected web search request, using web-search MCP server")
                 return self._call_mcp_server("web-search", user_message)
             else:
                 return "❌ Web search MCP server not available. Please ensure web-search is installed and enabled."
@@ -171,7 +176,8 @@ class AdminotaurAgent:
                     break
             
             if app_to_launch:
-                print(f"[Adminotaur] Detected request to launch '{app_to_launch}'")
+                if getattr(self, "verbose", False):
+                    print(f"[Adminotaur] Detected request to launch '{app_to_launch}'")
                 # The main_class should have a generic launch method
                 if hasattr(self.main_class, "launch_app_by_name"):
                     self.main_class.launch_app_by_name(app_to_launch)
@@ -655,7 +661,8 @@ class AdminotaurAgent:
             rag_path = Path(__file__).parent.parent.parent / "mcp" / "rag"
             sys.path.insert(0, str(rag_path))
             
-            print(f"[Adminotaur] Calling RAG MCP tool: {tool_name} with params: {parameters}")
+            if getattr(self, "verbose", False):
+                print(f"[Adminotaur] Calling RAG MCP tool: {tool_name} with params: {parameters}")
             
             if tool_name == "analyze_document":
                 from rag import analyze_document
@@ -687,7 +694,8 @@ class AdminotaurAgent:
                     "parameters": parameters
                 }
             
-            print(f"[Adminotaur] RAG MCP tool result: {result}")
+            if getattr(self, "verbose", False):
+                print(f"[Adminotaur] RAG MCP tool result: {result}")
             
             # Return the raw result for MCP server display
             return {
@@ -699,7 +707,8 @@ class AdminotaurAgent:
             }
                 
         except Exception as e:
-            print(f"[Adminotaur] Error calling RAG tool {tool_name}: {e}")
+            if getattr(self, "verbose", False):
+                print(f"[Adminotaur] Error calling RAG tool {tool_name}: {e}")
             return {
                 "success": False,
                 "error": str(e),
@@ -748,7 +757,8 @@ class AdminotaurAgent:
             print(f"[MCP Response] {response_text}")
                 
         except Exception as e:
-            print(f"[Adminotaur] Error storing MCP response: {e}")
+            if getattr(self, "verbose", False):
+                print(f"[Adminotaur] Error storing MCP response: {e}")
     
     def get_mcp_responses(self) -> List[Dict[str, Any]]:
         """Get stored MCP responses and clear them"""
