@@ -110,12 +110,17 @@ class AdminotaurAgent:
             env_vars = os.environ.copy()
             env_vars.update({
                 "PYTHONPATH": str(server_info['path']),
-                "PATH": os.environ.get("PATH", "")
+                "PATH": os.environ.get("PATH", ""),
+                "MCP_DEBUG": "1"  # Enable debug output for MCP servers
             })
+            
+            # Use the MCP server's venv Python if available, otherwise fall back to sys.executable
+            venv_python = server_info['path'] / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+            python_executable = str(venv_python) if venv_python.exists() else sys.executable
             
             # Execute the MCP server script
             process = subprocess.run(
-                [sys.executable, str(script_path)],
+                [python_executable, str(script_path)],
                 input=json.dumps(payload).encode("utf-8"),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
