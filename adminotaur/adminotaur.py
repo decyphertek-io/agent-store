@@ -18,16 +18,22 @@ class AdminotaurAgent:
         """
         self.main_class = main_class
         self.page = main_class.page
-        # App store path - look in the store directory
-        self.app_store_path = Path(__file__).parent.parent.parent / "app"
-        self.available_apps = self._discover_flet_apps()
         
-        # Discover MCP servers in the store directory
-        self.mcp_store_path = Path(__file__).parent.parent.parent / "mcp"
+        # NEW ARCHITECTURE: Look in ~/.decyphertek-ai/store/ for installed components
+        self.user_home = Path.home() / ".decyphertek-ai"
+        self.user_store = self.user_home / "store"
+        
+        # Installed component paths
+        self.app_store_path = self.user_store / "app"
+        self.mcp_store_path = self.user_store / "mcp"
+        self.agent_store_path = self.user_store / "agent"
+        
+        # Discover installed components
+        self.available_apps = self._discover_flet_apps()
         self.available_mcp_servers = self._discover_mcp_servers()
         
         # Note management paths
-        self.notes_dir = Path.home() / ".decyphertek-ai"
+        self.notes_dir = self.user_home
         self.user_notes_path = self.notes_dir / "user_notes.txt"
         self.agent_notes_path = self.notes_dir / "notes.md"
         
@@ -39,8 +45,9 @@ class AdminotaurAgent:
         # RAG MCP server integration
         self.rag_server_id = "rag"
         
-        # Ensure notes directory exists
+        # Ensure directories exist
         self.notes_dir.mkdir(parents=True, exist_ok=True)
+        self.user_store.mkdir(parents=True, exist_ok=True)
         
         # Debug info removed for cleaner output
 
@@ -467,24 +474,6 @@ class AdminotaurAgent:
         except Exception as e:
             return f"❌ Comprehensive status check failed: {e}"
     
-    def _call_rag_mcp_tool(self, tool_name: str, parameters: Dict[str, Any]) -> str:
-        """Call a RAG MCP server tool"""
-        try:
-            # Check if RAG MCP server is available
-            if self.rag_server_id not in self.available_mcp_servers:
-                return f"❌ RAG MCP server not found. Please install it first."
-            
-            # Use the ChatManager's MCP invocation system
-            if hasattr(self.main_class, 'chat_manager') and self.main_class.chat_manager:
-                return self.main_class.chat_manager.invoke_mcp_server(
-                    self.rag_server_id, tool_name, parameters
-                )
-            else:
-                return "❌ ChatManager not available for MCP server calls"
-                
-        except Exception as e:
-            return f"❌ RAG MCP tool call failed: {e}"
-    
     def add_document_to_rag(self, content: str, filename: str, source: str = "adminotaur") -> str:
         """Add a document to the RAG database"""
         try:
@@ -662,8 +651,8 @@ class AdminotaurAgent:
     def _call_rag_mcp_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """Call a RAG MCP tool and return the raw result for MCP server display"""
         try:
-            # Import the RAG MCP server functions directly
-            rag_path = Path(__file__).parent.parent.parent / "mcp" / "rag"
+            # NEW ARCHITECTURE: Import from ~/.decyphertek-ai/store/mcp/rag
+            rag_path = self.user_store / "mcp" / "rag"
             sys.path.insert(0, str(rag_path))
             
             if getattr(self, "verbose", False):
