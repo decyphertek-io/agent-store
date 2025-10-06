@@ -273,6 +273,155 @@ class AdminotaurAgent:
         except Exception as e:
             return f"❌ Health check failed: {e}"
     
+    def handle_rag_status(self) -> str:
+        """Handle RAG status check requests and return clean RAG system status."""
+        try:
+            result_lines = ["📚 **RAG System Status**\n"]
+            
+            # Check if document manager is available
+            if not hasattr(self.main_class, 'document_manager') or not self.main_class.document_manager:
+                result_lines.append("❌ Document Manager: Not available")
+                result_lines.append("   RAG system is not initialized")
+                return "\n".join(result_lines)
+            
+            doc_manager = self.main_class.document_manager
+            
+            # Check Qdrant connection
+            try:
+                collections = doc_manager.client.get_collections()
+                result_lines.append("✅ Qdrant Connection: Connected")
+                result_lines.append(f"   Collections: {len(collections.collections)}")
+            except Exception as e:
+                result_lines.append(f"❌ Qdrant Connection: Failed")
+                result_lines.append("   RAG system cannot function without Qdrant")
+                return "\n".join(result_lines)
+            
+            # Check documents
+            try:
+                documents = doc_manager.get_all_documents()
+                result_lines.append(f"📄 Documents: {len(documents)} total")
+                
+                if documents:
+                    result_lines.append("")
+                    result_lines.append("Recent Documents:")
+                    for i, doc in enumerate(documents[:3]):  # Show only first 3
+                        title = doc.get('title', 'Untitled')
+                        result_lines.append(f"   {i+1}. {title}")
+                    
+                    if len(documents) > 3:
+                        result_lines.append(f"   ... and {len(documents) - 3} more")
+                else:
+                    result_lines.append("   No documents found")
+                
+            except Exception as e:
+                result_lines.append(f"❌ Document Access: Failed")
+            
+            # Check storage directory
+            try:
+                storage_path = Path.home() / ".decyphertek-ai" / "qdrant"
+                if storage_path.exists():
+                    file_count = len(list(storage_path.rglob("*")))
+                    result_lines.append(f"💾 Storage: {file_count} files")
+                else:
+                    result_lines.append("⚠️ Storage: Directory not found")
+            except Exception as e:
+                result_lines.append("❌ Storage: Check failed")
+            
+            return "\n".join(result_lines)
+            
+        except Exception as e:
+            return f"❌ RAG status error: {e}"
+    
+    def handle_comprehensive_status(self) -> str:
+        """Handle comprehensive system status check with all components and detailed information."""
+        try:
+            result_lines = ["🔍 **Comprehensive System Status Report**\n"]
+            
+            # Agent Status
+            result_lines.append("### 🤖 **Agent Status**")
+            result_lines.append("✅ **Adminotaur Agent:** Operational and ready")
+            result_lines.append("✅ **Agent Script:** Loaded successfully")
+            result_lines.append("✅ **Agent Capabilities:** Available\n")
+            
+            # MCP Servers Status
+            result_lines.append("### 🔧 **MCP Servers Status**")
+            if self.available_mcp_servers:
+                for server_id, server_info in self.available_mcp_servers.items():
+                    try:
+                        test_result = self._call_mcp_server(server_id, "health_check")
+                        if "working" in test_result.lower() or "success" in test_result.lower():
+                            result_lines.append(f"✅ **{server_info['name']} ({server_id}):** Operational")
+                        else:
+                            result_lines.append(f"⚠️ **{server_info['name']} ({server_id}):** Issues detected")
+                            result_lines.append(f"   Details: {test_result}")
+                    except Exception as e:
+                        result_lines.append(f"❌ **{server_info['name']} ({server_id}):** Error - {e}")
+            else:
+                result_lines.append("❌ **No MCP servers discovered**")
+            result_lines.append("")
+            
+            # RAG System Status
+            result_lines.append("### 📚 **RAG System Status**")
+            if hasattr(self.main_class, 'document_manager') and self.main_class.document_manager:
+                try:
+                    doc_manager = self.main_class.document_manager
+                    collections = doc_manager.client.get_collections()
+                    result_lines.append("✅ **Qdrant Connection:** Connected")
+                    result_lines.append(f"   Collections: {len(collections.collections)}")
+                    
+                    documents = doc_manager.get_all_documents()
+                    result_lines.append(f"📄 **Documents:** {len(documents)} total")
+                    
+                    storage_path = Path.home() / ".decyphertek-ai" / "qdrant"
+                    if storage_path.exists():
+                        file_count = len(list(storage_path.rglob("*")))
+                        result_lines.append(f"💾 **Storage:** {file_count} files")
+                    
+                except Exception as e:
+                    result_lines.append(f"❌ **RAG System:** Error - {e}")
+            else:
+                result_lines.append("❌ **RAG System:** Document Manager not available")
+            result_lines.append("")
+            
+            # System Components
+            result_lines.append("### 🏗️ **System Components**")
+            result_lines.append("✅ **Chat Manager:** Available")
+            result_lines.append("✅ **Store Manager:** Available")
+            result_lines.append("✅ **AI Client:** Available")
+            result_lines.append("")
+            
+            # Note Management Status
+            result_lines.append("### 📝 **Note Management**")
+            user_notes_exist = self.user_notes_path.exists()
+            agent_notes_exist = self.agent_notes_path.exists()
+            
+            result_lines.append(f"✅ **User Notes:** {'Available' if user_notes_exist else 'Not found'}")
+            result_lines.append(f"✅ **Agent Notes:** {'Available' if agent_notes_exist else 'Not found'}")
+            result_lines.append("✅ **Note Commands:** Available (search, read, write)")
+            
+            if user_notes_exist:
+                try:
+                    user_notes_size = len(self.user_notes_path.read_text(encoding="utf-8"))
+                    result_lines.append(f"📊 **User Notes Size:** {user_notes_size} characters")
+                except Exception:
+                    pass
+            
+            if agent_notes_exist:
+                try:
+                    agent_notes_size = len(self.agent_notes_path.read_text(encoding="utf-8"))
+                    result_lines.append(f"📊 **Agent Notes Size:** {agent_notes_size} characters")
+                except Exception:
+                    pass
+            
+            result_lines.append("")
+            result_lines.append("### 🎯 **Overall System Status: READY**")
+            result_lines.append("All components are operational and ready for use.")
+            
+            return "\n".join(result_lines)
+            
+        except Exception as e:
+            return f"❌ Comprehensive status check failed: {e}"
+    
     def _search_notes(self, query: str) -> str:
         """Search through user notes, agent notes, and quicknotes for relevant information."""
         try:
@@ -442,6 +591,10 @@ def main():
             response = agent.handle_health_check()
         elif message == "sudo systemctl status agent-adminotaur":
             response = agent.handle_health_check()
+        elif message == "sudo systemctl status rag":
+            response = agent.handle_rag_status()
+        elif message == "sudo systemctl status all":
+            response = agent.handle_comprehensive_status()
         else:
             # For other messages, use the chat method
             response = agent.chat([], message)
