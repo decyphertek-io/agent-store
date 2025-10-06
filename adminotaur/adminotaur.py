@@ -19,11 +19,11 @@ class AdminotaurAgent:
         self.main_class = main_class
         self.page = main_class.page
         # App store path - look in the store directory
-        self.app_store_path = Path(__file__).parent.parent / "app"
+        self.app_store_path = Path(__file__).parent.parent.parent / "app"
         self.available_apps = self._discover_flet_apps()
         
         # Discover MCP servers in the store directory
-        self.mcp_store_path = Path(__file__).parent.parent / "mcp"
+        self.mcp_store_path = Path(__file__).parent.parent.parent / "mcp"
         self.available_mcp_servers = self._discover_mcp_servers()
         
         # Note management paths
@@ -652,7 +652,7 @@ class AdminotaurAgent:
         """Call a RAG MCP tool and return the raw result for MCP server display"""
         try:
             # Import the RAG MCP server functions directly
-            rag_path = Path(__file__).parent.parent / "mcp" / "rag"
+            rag_path = Path(__file__).parent.parent.parent / "mcp" / "rag"
             sys.path.insert(0, str(rag_path))
             
             print(f"[Adminotaur] Calling RAG MCP tool: {tool_name} with params: {parameters}")
