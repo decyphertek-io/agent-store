@@ -25,6 +25,12 @@ Adminotaur is the core AI agent for the DecypherTek AI system, designed to inter
 - **RAG Integration**: Works with Retrieval Augmented Generation for document processing
 - **Store Management**: Manages agent, MCP, and app stores
 
+### 5. RAG Document Management
+- **Document Search**: Search through uploaded documents using natural language queries
+- **Document Listing**: List all available documents in the RAG database
+- **Document Query**: Query specific information from uploaded documents
+- **RAG Integration**: Direct integration with RAG MCP server for document access
+
 ## Usage Examples
 
 ### Launching Applications
@@ -35,6 +41,12 @@ Adminotaur is the core AI agent for the DecypherTek AI system, designed to inter
 ### System Commands
 - "sudo systemctl status agent-adminotaur" - Shows agent status and capabilities
 - "Health check" - Performs system health verification
+
+### RAG Document Commands
+- "rag search python programming" - Search for documents about Python programming
+- "document query machine learning" - Query documents about machine learning
+- "rag list" - List all available documents in the RAG database
+- "documents show" - Display all documents in the RAG system
 
 ## Technical Details
 

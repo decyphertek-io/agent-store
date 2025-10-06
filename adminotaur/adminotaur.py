@@ -35,6 +35,9 @@ class AdminotaurAgent:
         self.admin_file = self.notes_folder / "admin.txt"
         self.quicknotes_file = self.notes_folder / "quicknotes.md"
         
+        # RAG MCP server integration
+        self.rag_server_id = "rag"
+        
         # Ensure notes directory exists
         self.notes_dir.mkdir(parents=True, exist_ok=True)
         
@@ -175,6 +178,22 @@ class AdminotaurAgent:
                 else:
                     return f"Sorry, I can't launch applications right now. The main application is missing the 'launch_app_by_name' method."
             
+        # Check for RAG-related commands
+        if "rag" in message_lower or "document" in message_lower or "documents" in message_lower:
+            if "search" in message_lower or "query" in message_lower or "find" in message_lower:
+                # Extract search query from the message
+                query = user_message.replace("rag", "").replace("document", "").replace("search", "").replace("query", "").replace("find", "").strip()
+                if query:
+                    return self.query_rag_documents(query)
+                else:
+                    return "Please provide a search query. Example: 'rag search python programming'"
+            elif "list" in message_lower or "show" in message_lower:
+                return self.list_rag_documents()
+            elif "add" in message_lower or "upload" in message_lower:
+                return "To add documents to RAG, please use the RAG interface in the app or upload files through the document manager."
+            else:
+                return self._get_rag_help()
+        
         # Check for note-related commands
         if "note" in message_lower or "notes" in message_lower:
             if "search" in message_lower or "find" in message_lower:
@@ -422,6 +441,69 @@ class AdminotaurAgent:
         except Exception as e:
             return f"❌ Comprehensive status check failed: {e}"
     
+    def _call_rag_mcp_tool(self, tool_name: str, parameters: Dict[str, Any]) -> str:
+        """Call a RAG MCP server tool"""
+        try:
+            # Check if RAG MCP server is available
+            if self.rag_server_id not in self.available_mcp_servers:
+                return f"❌ RAG MCP server not found. Please install it first."
+            
+            # Use the ChatManager's MCP invocation system
+            if hasattr(self.main_class, 'chat_manager') and self.main_class.chat_manager:
+                return self.main_class.chat_manager.invoke_mcp_server(
+                    self.rag_server_id, tool_name, parameters
+                )
+            else:
+                return "❌ ChatManager not available for MCP server calls"
+                
+        except Exception as e:
+            return f"❌ RAG MCP tool call failed: {e}"
+    
+    def add_document_to_rag(self, content: str, filename: str, source: str = "adminotaur") -> str:
+        """Add a document to the RAG database"""
+        try:
+            parameters = {
+                "content": content,
+                "filename": filename,
+                "source": source
+            }
+            result = self._call_rag_mcp_tool("add_document", parameters)
+            return result
+        except Exception as e:
+            return f"❌ Failed to add document to RAG: {e}"
+    
+    def query_rag_documents(self, query: str, n_results: int = 3) -> str:
+        """Query documents in the RAG database"""
+        try:
+            parameters = {
+                "query": query,
+                "n_results": n_results
+            }
+            result = self._call_rag_mcp_tool("query_documents", parameters)
+            return result
+        except Exception as e:
+            return f"❌ Failed to query RAG documents: {e}"
+    
+    def list_rag_documents(self) -> str:
+        """List all documents in the RAG database"""
+        try:
+            parameters = {}
+            result = self._call_rag_mcp_tool("list_documents", parameters)
+            return result
+        except Exception as e:
+            return f"❌ Failed to list RAG documents: {e}"
+    
+    def delete_rag_document(self, doc_id: str) -> str:
+        """Delete a document from the RAG database"""
+        try:
+            parameters = {
+                "doc_id": doc_id
+            }
+            result = self._call_rag_mcp_tool("delete_document", parameters)
+            return result
+        except Exception as e:
+            return f"❌ Failed to delete RAG document: {e}"
+    
     def _search_notes(self, query: str) -> str:
         """Search through user notes, agent notes, and quicknotes for relevant information."""
         try:
@@ -543,6 +625,28 @@ class AdminotaurAgent:
             
         except Exception as e:
             return f"❌ Error reading notes: {e}"
+    
+    def _get_rag_help(self) -> str:
+        """Get help information for RAG document commands."""
+        return """📚 **RAG Document Commands:**
+
+**Search Documents:**
+- `rag search <query>` - Search through uploaded documents
+- `document query <query>` - Query the RAG database
+- `documents find <query>` - Find information in documents
+
+**List Documents:**
+- `rag list` - List all documents in RAG database
+- `documents show` - Show all available documents
+
+**Add Documents:**
+- Use the RAG interface in the app to upload documents
+- Documents are automatically processed and indexed
+
+**Examples:**
+- `rag search python programming`
+- `document query machine learning`
+- `rag list`"""
     
     def _get_notes_help(self) -> str:
         """Get help information about note management."""
