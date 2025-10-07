@@ -178,42 +178,108 @@ class AdminotaurAgent:
             return f"❌ Error calling MCP server '{server_id}': {e}"
     
     def _run_health_check(self) -> str:
-        """Run comprehensive health check on all enabled components"""
-        result = "=== Agent Health Check ===\n\n"
+        """Show agent status, capabilities, and run functionality tests"""
+        result = "=== Adminotaur Agent Health Check ===\n\n"
         
-        # Test agent functionality
-        result += f"🔍 Testing Adminotaur Agent:\n"
-        result += f"  ✅ Agent loaded: SUCCESS\n"
+        # Agent status
+        result += f"🤖 Agent: Adminotaur\n"
         result += f"  📁 Store path: {self.user_store}\n"
         result += f"  🔧 Verbose mode: {'✅' if getattr(self, 'verbose', False) else '❌'}\n"
+        result += f"  🚀 Status: Active and ready\n\n"
         
-        # Test MCP servers
-        result += f"\n🔍 Testing MCP Servers:\n"
+        # Available MCP servers
+        result += f"📡 Available MCP Servers:\n"
         if self.available_mcp_servers:
             for server_id, server_info in self.available_mcp_servers.items():
-                result += f"  📡 Testing {server_id}:\n"
-                
-                # Test MCP server functionality
-                mcp_test = self._test_mcp_server(server_id)
-                if mcp_test["success"]:
-                    result += f"    ✅ Connection: SUCCESS\n"
-                    result += f"    ⏱️  Response time: {mcp_test['execution_time']:.2f}s\n"
-                    result += f"    📝 Response preview: {mcp_test['response'][:100]}...\n"
-                else:
-                    result += f"    ❌ Connection: FAILED\n"
-                    result += f"    🚨 Error: {mcp_test['error']}\n"
+                server_type = server_info.get('type', 'unknown')
+                result += f"  • {server_id} ({server_type})\n"
         else:
             result += "  ⚠️ No MCP servers available\n"
         
-        # Test apps
-        result += f"\n🔍 Testing Apps:\n"
+        result += "\n"
+        
+        # Available apps
+        result += f"📱 Available Apps:\n"
         if self.available_apps:
             for app_id, app_info in self.available_apps.items():
-                result += f"  📱 {app_id}: {'✅' if app_info.get('main_file', {}).exists() else '❌'}\n"
+                result += f"  • {app_id}\n"
         else:
             result += "  ⚠️ No apps available\n"
         
+        result += "\n"
+        
+        # Capabilities
+        result += f"🛠️ Capabilities:\n"
+        result += f"  • Web search (via MCP servers)\n"
+        result += f"  • Document management (RAG)\n"
+        result += f"  • Application launching\n"
+        result += f"  • Note management\n"
+        result += f"  • System diagnostics\n"
+        result += f"  • Chat and conversation\n"
+        
+        result += "\n"
+        result += "=== Functionality Tests ===\n\n"
+        
+        # Test agent - return adminotaur.md
+        result += f"🔍 Testing Agent:\n"
+        agent_test = self._test_agent()
+        if agent_test["success"]:
+            result += f"  ✅ Agent test: SUCCESS\n"
+            result += f"  ⏱️  Response time: {agent_test['execution_time']:.2f}s\n"
+            result += f"  📝 Response preview: {agent_test['response'][:100]}...\n"
+        else:
+            result += f"  ❌ Agent test: FAILED\n"
+            result += f"  🚨 Error: {agent_test['error']}\n"
+        
+        result += "\n"
+        
+        # Test web-search MCP server specifically
+        if "web-search" in self.available_mcp_servers:
+            result += f"🔍 Testing Web Search MCP:\n"
+            web_test = self._test_mcp_server("web-search")
+            if web_test["success"]:
+                result += f"  ✅ Web search test: SUCCESS\n"
+                result += f"  ⏱️  Response time: {web_test['execution_time']:.2f}s\n"
+                result += f"  📝 Response preview: {web_test['response'][:100]}...\n"
+            else:
+                result += f"  ❌ Web search test: FAILED\n"
+                result += f"  🚨 Error: {web_test['error']}\n"
+        else:
+            result += f"  ⚠️ Web search MCP not available\n"
+        
+        result += "\n"
+        result += "I can help with launching applications, managing notes, and system diagnostics. What would you like to do?"
+        
         return result
+    
+    def _test_agent(self) -> Dict[str, Any]:
+        """Test agent functionality by returning adminotaur.md"""
+        test_result = {
+            "success": False,
+            "response": None,
+            "error": None,
+            "execution_time": 0
+        }
+        
+        try:
+            import time
+            start_time = time.time()
+            
+            # Try to read adminotaur.md file
+            md_file = self.user_store / "agent" / "adminotaur" / "adminotaur.md"
+            if md_file.exists():
+                content = md_file.read_text(encoding="utf-8")
+                test_result["success"] = True
+                test_result["response"] = content
+            else:
+                test_result["error"] = f"adminotaur.md not found at {md_file}"
+            
+            test_result["execution_time"] = time.time() - start_time
+            
+        except Exception as e:
+            test_result["error"] = f"Error reading adminotaur.md: {e}"
+        
+        return test_result
     
     def _test_mcp_server(self, server_id: str) -> Dict[str, Any]:
         """Test MCP server functionality with appropriate test queries"""
