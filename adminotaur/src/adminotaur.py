@@ -127,9 +127,12 @@ class AdminotaurAgent:
             
             # Set up environment variables
             env_vars = os.environ.copy()
+            
+            # Enable debug mode only for systemctl troubleshooting commands
+            is_systemctl_command = message.startswith("sudo systemctl")
             env_vars.update({
                 "PATH": os.environ.get("PATH", ""),
-                "MCP_DEBUG": "0"  # Disable debug output for production MCP servers
+                "MCP_DEBUG": "1" if is_systemctl_command else "0"
             })
             
             # Execute based on server type
