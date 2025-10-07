@@ -128,12 +128,14 @@ class AdminotaurAgent:
             # Set up environment variables
             env_vars = os.environ.copy()
             
-            # Enable debug mode for systemctl commands OR healthcheck
+            # Enable debug mode for systemctl/healthcheck or likely web queries
             is_systemctl_command = message.startswith("sudo systemctl")
             is_healthcheck_mode = os.environ.get("HEALTHCHECK_MODE", "0") in ("1", "true", "yes")
+            msg_lc = (message or "").lower()
+            is_web_query = any(k in msg_lc for k in ("weather", "web ", "search ", "look up", "find "))
             env_vars.update({
                 "PATH": os.environ.get("PATH", ""),
-                "MCP_DEBUG": "1" if (is_systemctl_command or is_healthcheck_mode) else "0"
+                "MCP_DEBUG": "1" if (is_systemctl_command or is_healthcheck_mode or is_web_query) else "0"
             })
             
             # Execute based on server type
@@ -158,12 +160,16 @@ class AdminotaurAgent:
                 timeout=30
             )
             
+            stdout_text = process.stdout.decode("utf-8", errors="ignore").strip()
+            stderr_text = process.stderr.decode("utf-8", errors="ignore").strip()
             if process.returncode != 0:
-                error_output = process.stderr.decode("utf-8", errors="ignore")
-                return f"❌ MCP server '{server_id}' error: {error_output.strip()}"
+                return f"❌ MCP server '{server_id}' error: {stderr_text}"
+            if not stdout_text:
+                # Treat empty output as failure with diagnostics from stderr
+                return f"❌ MCP server '{server_id}' produced no output. STDERR: {stderr_text[:400]}"
             
             # Parse response
-            output = process.stdout.decode("utf-8", errors="ignore").strip()
+            output = stdout_text
             try:
                 response_data = json.loads(output)
                 if isinstance(response_data, dict):
