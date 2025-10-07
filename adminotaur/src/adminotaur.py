@@ -176,12 +176,91 @@ class AdminotaurAgent:
             return f"❌ MCP server '{server_id}' timed out"
         except Exception as e:
             return f"❌ Error calling MCP server '{server_id}': {e}"
+    
+    def _run_health_check(self) -> str:
+        """Run comprehensive health check on all enabled components"""
+        result = "=== Agent Health Check ===\n\n"
+        
+        # Test agent functionality
+        result += f"🔍 Testing Adminotaur Agent:\n"
+        result += f"  ✅ Agent loaded: SUCCESS\n"
+        result += f"  📁 Store path: {self.user_store}\n"
+        result += f"  🔧 Verbose mode: {'✅' if getattr(self, 'verbose', False) else '❌'}\n"
+        
+        # Test MCP servers
+        result += f"\n🔍 Testing MCP Servers:\n"
+        if self.available_mcp_servers:
+            for server_id, server_info in self.available_mcp_servers.items():
+                result += f"  📡 Testing {server_id}:\n"
+                
+                # Test MCP server functionality
+                mcp_test = self._test_mcp_server(server_id)
+                if mcp_test["success"]:
+                    result += f"    ✅ Connection: SUCCESS\n"
+                    result += f"    ⏱️  Response time: {mcp_test['execution_time']:.2f}s\n"
+                    result += f"    📝 Response preview: {mcp_test['response'][:100]}...\n"
+                else:
+                    result += f"    ❌ Connection: FAILED\n"
+                    result += f"    🚨 Error: {mcp_test['error']}\n"
+        else:
+            result += "  ⚠️ No MCP servers available\n"
+        
+        # Test apps
+        result += f"\n🔍 Testing Apps:\n"
+        if self.available_apps:
+            for app_id, app_info in self.available_apps.items():
+                result += f"  📱 {app_id}: {'✅' if app_info.get('main_file', {}).exists() else '❌'}\n"
+        else:
+            result += "  ⚠️ No apps available\n"
+        
+        return result
+    
+    def _test_mcp_server(self, server_id: str) -> Dict[str, Any]:
+        """Test MCP server functionality with appropriate test queries"""
+        test_result = {
+            "success": False,
+            "response": None,
+            "error": None,
+            "execution_time": 0
+        }
+        
+        try:
+            import time
+            start_time = time.time()
+            
+            # Prepare test payload based on server type
+            if server_id == "web-search":
+                test_message = "web search Describe Neuromancer 1984"
+            elif server_id == "rag":
+                test_message = "rag list_documents"
+            else:
+                test_message = f"test {server_id}"
+            
+            # Call the MCP server
+            response = self._call_mcp_server(server_id, test_message)
+            
+            test_result["execution_time"] = time.time() - start_time
+            
+            if response and not response.startswith("❌"):
+                test_result["success"] = True
+                test_result["response"] = response
+            else:
+                test_result["error"] = response
+                
+        except Exception as e:
+            test_result["error"] = f"Test error: {e}"
+        
+        return test_result
 
     def chat(self, messages: List[Dict], user_message: str) -> str:
         """
         Main chat method for the Adminotaur agent.
         Determines if a tool needs to be used, like launching an app.
         """
+        # Check for health check command first
+        if user_message == "health-check-agent":
+            return self._run_health_check()
+        
         # Thinking...
         
         message_lower = user_message.lower()
