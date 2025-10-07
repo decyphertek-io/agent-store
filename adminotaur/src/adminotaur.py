@@ -83,17 +83,28 @@ class AdminotaurAgent:
         for server_dir in self.mcp_store_path.iterdir():
             if server_dir.is_dir():
                 server_name = server_dir.name
-                # Look for web.py in web-search directory, or {server_name}.py in other directories
+                # Look for compiled .mcp binary first, then fallback to .py scripts
                 if server_name == "web-search":
+                    server_binary = server_dir / "web.mcp"
                     server_script = server_dir / "web.py"
                 else:
+                    server_binary = server_dir / f"{server_name}.mcp"
                     server_script = server_dir / f"{server_name}.py"
                 
-                if server_script.exists():
+                # Prefer binary over script
+                if server_binary.exists():
+                    servers[server_name.lower()] = {
+                        'name': server_name,
+                        'path': server_dir,
+                        'script': server_binary,
+                        'type': 'binary'
+                    }
+                elif server_script.exists():
                     servers[server_name.lower()] = {
                         'name': server_name,
                         'path': server_dir,
                         'script': server_script,
+                        'type': 'script'
                     }
         return servers
     
@@ -105,6 +116,7 @@ class AdminotaurAgent:
             
             server_info = self.available_mcp_servers[server_id]
             script_path = server_info['script']
+            server_type = server_info.get('type', 'script')
             
             # Prepare the payload for the MCP server
             payload = {
@@ -116,18 +128,24 @@ class AdminotaurAgent:
             # Set up environment variables
             env_vars = os.environ.copy()
             env_vars.update({
-                "PYTHONPATH": str(server_info['path']),
                 "PATH": os.environ.get("PATH", ""),
                 "MCP_DEBUG": "1"  # Enable debug output for MCP servers
             })
             
-            # Use the MCP server's venv Python if available, otherwise fall back to sys.executable
-            venv_python = server_info['path'] / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-            python_executable = str(venv_python) if venv_python.exists() else sys.executable
+            # Execute based on server type
+            if server_type == 'binary':
+                # Direct execution of compiled binary
+                cmd = [str(script_path)]
+            else:
+                # Fallback to Python script execution
+                env_vars["PYTHONPATH"] = str(server_info['path'])
+                venv_python = server_info['path'] / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+                python_executable = str(venv_python) if venv_python.exists() else sys.executable
+                cmd = [python_executable, str(script_path)]
             
-            # Execute the MCP server script
+            # Execute the MCP server
             process = subprocess.run(
-                [python_executable, str(script_path)],
+                cmd,
                 input=json.dumps(payload).encode("utf-8"),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -649,47 +667,37 @@ class AdminotaurAgent:
             return f"❌ Failed to analyze RAG document: {e}"
     
     def _call_rag_mcp_tool(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Call a RAG MCP tool and return the raw result for MCP server display"""
+        """Call a RAG MCP tool via the compiled binary and return the raw result for MCP server display"""
         try:
-            # NEW ARCHITECTURE: Import from ~/.decyphertek-ai/store/mcp/rag
-            rag_path = self.user_store / "mcp" / "rag"
-            sys.path.insert(0, str(rag_path))
-            
             if getattr(self, "verbose", False):
                 print(f"[Adminotaur] Calling RAG MCP tool: {tool_name} with params: {parameters}")
             
-            if tool_name == "analyze_document":
-                from rag import analyze_document
-                result = analyze_document(parameters.get("filename", ""))
-            elif tool_name == "read_document":
-                from rag import read_document
-                result = read_document(parameters.get("filename", ""))
-            elif tool_name == "search_documents":
-                from rag import search_documents
-                result = search_documents(parameters.get("query", ""))
-            elif tool_name == "list_documents":
-                from rag import list_documents
-                result = list_documents()
-            elif tool_name == "add_document":
-                from rag import add_document
-                result = add_document(
-                    parameters.get("content", ""),
-                    parameters.get("filename", ""),
-                    parameters.get("source", "adminotaur")
-                )
-            elif tool_name == "delete_document":
-                from rag import delete_document
-                result = delete_document(parameters.get("doc_id", ""))
-            else:
+            # Use the RAG MCP server via subprocess call
+            rag_server_id = "rag"
+            if rag_server_id not in self.available_mcp_servers:
                 return {
                     "success": False,
-                    "error": f"Unknown RAG tool: {tool_name}",
+                    "error": f"RAG MCP server '{rag_server_id}' not found",
                     "tool_name": tool_name,
-                    "parameters": parameters
+                    "parameters": parameters,
+                    "server": "RAG"
                 }
             
-            if getattr(self, "verbose", False):
-                print(f"[Adminotaur] RAG MCP tool result: {result}")
+            # Prepare payload for RAG MCP server
+            payload = {
+                "message": f"rag {tool_name}",
+                "context": json.dumps(parameters),
+                "history": []
+            }
+            
+            # Call the RAG MCP server
+            result_text = self._call_mcp_server(rag_server_id, json.dumps(payload))
+            
+            # Parse the result
+            try:
+                result = json.loads(result_text)
+            except json.JSONDecodeError:
+                result = {"text": result_text, "status": "success"}
             
             # Return the raw result for MCP server display
             return {
