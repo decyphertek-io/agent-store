@@ -128,11 +128,12 @@ class AdminotaurAgent:
             # Set up environment variables
             env_vars = os.environ.copy()
             
-            # Enable debug mode only for systemctl troubleshooting commands
+            # Enable debug mode for systemctl commands OR healthcheck
             is_systemctl_command = message.startswith("sudo systemctl")
+            is_healthcheck_mode = os.environ.get("HEALTHCHECK_MODE", "0") in ("1", "true", "yes")
             env_vars.update({
                 "PATH": os.environ.get("PATH", ""),
-                "MCP_DEBUG": "1" if is_systemctl_command else "0"
+                "MCP_DEBUG": "1" if (is_systemctl_command or is_healthcheck_mode) else "0"
             })
             
             # Execute based on server type
@@ -246,6 +247,18 @@ class AdminotaurAgent:
                 result += f"  🚨 Error: {web_test['error']}\n"
         else:
             result += f"  ⚠️ Web search MCP not available\n"
+
+        # Test OpenRouter API if available
+        result += "\n"
+        api_test = self._test_api_openrouter()
+        result += "🔍 Testing OpenRouter API:\n"
+        if api_test["success"]:
+            result += f"  ✅ API test: SUCCESS\n"
+            result += f"  ⏱️  Response time: {api_test['execution_time']:.2f}s\n"
+            result += f"  📝 Response preview: {api_test['response'][:100]}...\n"
+        else:
+            result += f"  ❌ API test: FAILED\n"
+            result += f"  🚨 Error: {api_test['error']}\n"
         
         result += "\n"
         result += "I can help with launching applications, managing notes, and system diagnostics. What would you like to do?"
@@ -302,8 +315,17 @@ class AdminotaurAgent:
             else:
                 test_message = f"test {server_id}"
             
-            # Call the MCP server
-            response = self._call_mcp_server(server_id, test_message)
+            # Mark healthcheck mode for verbose diagnostics inside _call_mcp_server
+            prev_health = os.environ.get("HEALTHCHECK_MODE")
+            os.environ["HEALTHCHECK_MODE"] = "1"
+            try:
+                # Call the MCP server
+                response = self._call_mcp_server(server_id, test_message)
+            finally:
+                if prev_health is None:
+                    os.environ.pop("HEALTHCHECK_MODE", None)
+                else:
+                    os.environ["HEALTHCHECK_MODE"] = prev_health
             
             test_result["execution_time"] = time.time() - start_time
             
@@ -311,11 +333,48 @@ class AdminotaurAgent:
                 test_result["success"] = True
                 test_result["response"] = response
             else:
-                test_result["error"] = response
+                # Include response text in error for better diagnostics
+                test_result["error"] = response or "Unknown error (empty response)"
                 
         except Exception as e:
             test_result["error"] = f"Test error: {e}"
         
+        return test_result
+
+    def _test_api_openrouter(self) -> Dict[str, Any]:
+        """Test OpenRouter API if configured via OPENROUTER_API_KEY."""
+        test_result = {
+            "success": False,
+            "response": None,
+            "error": None,
+            "execution_time": 0
+        }
+        try:
+            import time, json, os, urllib.request
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+            if not api_key:
+                test_result["error"] = "OPENROUTER_API_KEY not configured"
+                return test_result
+            start = time.time()
+            req = urllib.request.Request(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                data=json.dumps({
+                    "model": "qwen/qwen-2.5-coder-32b-instruct",
+                    "messages": [{"role": "user", "content": "Can you explain recursion?"}]
+                }).encode("utf-8")
+            )
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                body = resp.read().decode("utf-8")
+            test_result["execution_time"] = time.time() - start
+            test_result["success"] = True
+            test_result["response"] = body
+        except Exception as e:
+            test_result["error"] = f"API test error: {e}"
         return test_result
 
     def chat(self, messages: List[Dict], user_message: str) -> str:
