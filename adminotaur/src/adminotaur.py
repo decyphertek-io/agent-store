@@ -324,7 +324,7 @@ class AdminotaurAgent:
         Determines if a tool needs to be used, like launching an app.
         """
         # Check for health check command first
-        if user_message == "health-check-agent":
+        if user_message in ("health-check-agent", "healthcheck-agent"):
             return self._run_health_check()
         
         # Thinking...
@@ -1265,10 +1265,10 @@ def main():
         agent = AdminotaurAgent(DummyMainClass())
         
         # Handle different message types
-        if message == "health_check" or message == "health-check":
-            response = agent.handle_health_check()
+        if message in ("health_check", "health-check", "health-check-agent", "healthcheck-agent"):
+            response = agent._run_health_check()
         elif message == "sudo systemctl status agent-adminotaur":
-            response = agent.handle_health_check()
+            response = agent._run_health_check()
         elif message == "sudo systemctl status rag":
             response = agent.handle_rag_status()
         elif message == "sudo systemctl status all":
