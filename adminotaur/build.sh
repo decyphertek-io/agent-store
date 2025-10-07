@@ -1,27 +1,30 @@
 #!/bin/bash
-# Build script for Adminotaur agent
-# Mirrors launch.sh logic exactly
+# Adminotaur Agent Setup Script
+# Sets up Poetry environment for the Adminotaur agent
 
 set -e
 
-# Get script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
+# Check if Poetry is installed
+if ! command -v poetry &> /dev/null; then
+    echo "Error: Poetry is not installed. Please install it first."
+    exit 1
+fi
 
 echo "Setting up Adminotaur agent environment..."
 
-# Configure Poetry to create .venv in project directory (not global)
+# Configure Poetry to create .venv in this directory
 export POETRY_VIRTUALENVS_IN_PROJECT=true
 export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring
 
-# Check if virtual environment exists
-VENV_PATH=".venv"
-if [ ! -d "$VENV_PATH" ]; then
+# Check if .venv exists
+if [ ! -d ".venv" ]; then
     echo "Creating new Poetry virtual environment in .venv"
     poetry install --no-root
     echo "✓ Virtual environment created"
 else
-    echo "✓ Virtual environment exists"
+    echo "✓ Virtual environment already exists"
+    # Ensure dependencies are up to date
+    poetry install --no-root
 fi
 
 echo "✓ Adminotaur agent environment ready"
