@@ -398,15 +398,17 @@ class AdminotaurAgent:
         app_launch_keywords = ["run", "launch", "start", "open", "execute"]
         web_search_keywords = ["weather", "search", "what is", "how to", "find", "look up", "web search"]
         
-        # Check for web search intent
-        if any(keyword in message_lower for keyword in web_search_keywords):
-            if "web-search" in self.available_mcp_servers:
-                if getattr(self, "verbose", False):
-                    print(f"[Adminotaur] Detected web search request, using web-search MCP server")
-                return self._call_mcp_server("web-search", user_message)
-            else:
-                return "❌ Web search MCP server not available. Please ensure web-search is installed and enabled."
+        # Route based on UI toggle propagated via env
+        try:
+            use_web_search = os.environ.get("WEB_SEARCH_ENABLED", "0") in ("1", "true", "yes")
+        except Exception:
+            use_web_search = False
+        if use_web_search and "web-search" in self.available_mcp_servers:
+            if getattr(self, "verbose", False):
+                print(f"[Adminotaur] Web Search enabled: routing to web-search MCP server")
+            return self._call_mcp_server("web-search", user_message)
         
+        # If not using web search, continue with normal routing (apps/RAG/API)
         # Check for app launch intent
         triggered_keyword = next((word for word in app_launch_keywords if word in message_lower), None)
         
