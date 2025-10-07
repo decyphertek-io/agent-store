@@ -129,7 +129,7 @@ class AdminotaurAgent:
             env_vars = os.environ.copy()
             env_vars.update({
                 "PATH": os.environ.get("PATH", ""),
-                "MCP_DEBUG": "1"  # Enable debug output for MCP servers
+                "MCP_DEBUG": "0"  # Disable debug output for production MCP servers
             })
             
             # Execute based on server type
