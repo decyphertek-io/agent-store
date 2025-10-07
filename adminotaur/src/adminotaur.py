@@ -135,7 +135,8 @@ class AdminotaurAgent:
             is_web_query = any(k in msg_lc for k in ("weather", "web ", "search ", "look up", "find "))
             env_vars.update({
                 "PATH": os.environ.get("PATH", ""),
-                "MCP_DEBUG": "1" if (is_systemctl_command or is_healthcheck_mode or is_web_query) else "0"
+                "MCP_DEBUG": "1" if (is_systemctl_command or is_healthcheck_mode or is_web_query) else "0",
+                "MCP_STANDALONE": "1"  # Ensure MCP servers run in standalone mode when called by agent
             })
             
             # Execute based on server type
