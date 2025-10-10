@@ -37,16 +37,20 @@ class AdminotaurAgent:
         self.user_notes_path = self.notes_dir / "user_notes.txt"
         self.agent_notes_path = self.notes_dir / "notes.md"
         
-        # New notes directory structure
+        # New notes directory structure - save directly to ~/.decyphertek-ai/notes/
         self.notes_folder = self.notes_dir / "notes"
         self.admin_file = self.notes_folder / "admin.txt"
         self.quicknotes_file = self.notes_folder / "quicknotes.md"
+        
+        # Chat history path
+        self.chat_history_path = self.user_home / "chat_history.json"
         
         # RAG MCP server integration
         self.rag_server_id = "rag"
         
         # Ensure directories exist
         self.notes_dir.mkdir(parents=True, exist_ok=True)
+        self.notes_folder.mkdir(parents=True, exist_ok=True)
         self.user_store.mkdir(parents=True, exist_ok=True)
         
         # Debug info removed for cleaner output
@@ -389,9 +393,20 @@ class AdminotaurAgent:
         Main chat method for the Adminotaur agent.
         Determines if a tool needs to be used, like launching an app.
         """
+        # Save chat message to history
+        self._save_chat_message(user_message, "user")
+        
         # Check for health check command first
         if user_message in ("health-check-agent", "healthcheck-agent"):
-            return self._run_health_check()
+            response = self._run_health_check()
+            self._save_chat_message(response, "assistant")
+            return response
+        
+        # Check for @research mode
+        if user_message.startswith("@research"):
+            response = self._handle_research_mode(user_message)
+            self._save_chat_message(response, "assistant")
+            return response
         
         # Thinking...
         
@@ -473,7 +488,9 @@ class AdminotaurAgent:
                 return self._get_notes_help()
             
         # Default response if no specific action is taken
-        return "I can help with launching applications, managing notes, and system diagnostics. What would you like to do?"
+        response = "I can help with launching applications, managing notes, and system diagnostics. What would you like to do?"
+        self._save_chat_message(response, "assistant")
+        return response
     
     def handle_health_check(self) -> str:
         """Handle comprehensive health check requests and return system status."""
@@ -1307,14 +1324,306 @@ class AdminotaurAgent:
 - `add note: Your note content here` - Add a new note
 - `create note: Your note content here` - Add a new note
 
+**Research Mode:**
+- `@research <topic>` - Trigger research mode with web search and AI summary
+- Results are automatically saved to research notes
+- Can reference previous research notes and chat history
+
 **Examples:**
 - `search notes for "troubleshooting"`
 - `write note: Remember to check logs when debugging`
 - `read notes`
+- `@research cybersecurity trends 2025`
 
 Notes are saved to:
 - User notes: `~/.decyphertek-ai/user_notes.txt`
-- Agent notes: `~/.decyphertek-ai/notes.md` (formatted markdown)"""
+- Agent notes: `~/.decyphertek-ai/notes.md` (formatted markdown)
+- Research notes: `~/.decyphertek-ai/notes/` (can name anything like example.txt, researching.txt)"""
+    
+    def _handle_research_mode(self, message: str) -> str:
+        """
+        Handle @research mode: web search + AI summarization + note saving.
+        Format: @research <topic>
+        """
+        try:
+            # Extract research topic
+            topic = message.replace("@research", "").strip()
+            
+            if not topic:
+                return "❌ Please provide a research topic. Example: `@research quantum computing basics`"
+            
+            result_lines = [f"🔬 **Research Mode Activated**\n"]
+            result_lines.append(f"📋 **Topic:** {topic}\n")
+            
+            # Step 1: Web search using MCP
+            result_lines.append("### Step 1: Web Search")
+            
+            if "web-search" not in self.available_mcp_servers:
+                return "❌ Web search MCP server not available. Please install it first."
+            
+            search_query = f"web search {topic}"
+            result_lines.append(f"🔍 Searching for: {topic}...")
+            
+            web_results = self._call_mcp_server("web-search", search_query)
+            
+            if web_results.startswith("❌"):
+                result_lines.append(f"\n{web_results}")
+                return "\n".join(result_lines)
+            
+            result_lines.append(f"✅ Search completed\n")
+            
+            # Step 2: AI Summarization using OpenRouter
+            result_lines.append("### Step 2: AI Analysis & Summarization")
+            result_lines.append("🤖 Analyzing findings with AI...")
+            
+            summary = self._summarize_with_ai(topic, web_results)
+            
+            if summary.startswith("❌"):
+                result_lines.append(f"\n{summary}")
+                return "\n".join(result_lines)
+            
+            result_lines.append(f"✅ Analysis completed\n")
+            
+            # Step 3: Read previous notes and chat history for context
+            result_lines.append("### Step 3: Context Integration")
+            result_lines.append("📚 Checking previous research and chat history...")
+            
+            context_info = self._get_research_context(topic)
+            result_lines.append(f"✅ Found {context_info['notes_count']} related notes, {context_info['history_count']} relevant chat messages\n")
+            
+            # Step 4: Save to notes
+            result_lines.append("### Step 4: Saving Research")
+            
+            note_filename = self._save_research_note(topic, web_results, summary, context_info)
+            
+            if note_filename:
+                result_lines.append(f"✅ Research saved to: `{note_filename}`\n")
+            else:
+                result_lines.append("⚠️ Research could not be saved\n")
+            
+            # Step 5: Present summary
+            result_lines.append("### 📊 Research Summary\n")
+            result_lines.append(summary)
+            
+            if context_info['related_notes']:
+                result_lines.append("\n### 🔗 Related Previous Research")
+                for note in context_info['related_notes'][:3]:
+                    result_lines.append(f"- {note}")
+            
+            return "\n".join(result_lines)
+            
+        except Exception as e:
+            return f"❌ Research mode error: {e}"
+    
+    def _summarize_with_ai(self, topic: str, web_results: str) -> str:
+        """Use OpenRouter AI to summarize web search findings."""
+        try:
+            import urllib.request
+            
+            # Get API key from environment
+            api_key = os.environ.get("OPENROUTER_API_KEY")
+            if not api_key:
+                return "❌ OPENROUTER_API_KEY not configured. Please set it in your environment."
+            
+            # Prepare prompt for AI
+            prompt = f"""You are a research assistant helping to summarize web search results.
+
+Topic: {topic}
+
+Web Search Results:
+{web_results}
+
+Please provide a comprehensive summary covering:
+1. Key findings and main points
+2. Important facts and statistics
+3. Relevant trends or developments
+4. Practical applications or implications
+5. Recommended next steps or areas for deeper research
+
+Format the summary in clear markdown with headers and bullet points."""
+
+            # Call OpenRouter API
+            request_data = {
+                "model": "qwen/qwen-2.5-coder-32b-instruct",
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ]
+            }
+            
+            req = urllib.request.Request(
+                url="https://openrouter.ai/api/v1/chat/completions",
+                method="POST",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                data=json.dumps(request_data).encode("utf-8")
+            )
+            
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                response_data = json.loads(resp.read().decode("utf-8"))
+            
+            # Extract summary from response
+            if "choices" in response_data and len(response_data["choices"]) > 0:
+                summary = response_data["choices"][0]["message"]["content"]
+                return summary
+            else:
+                return "❌ AI summarization failed: No response from API"
+                
+        except Exception as e:
+            return f"❌ AI summarization error: {e}"
+    
+    def _get_research_context(self, topic: str) -> Dict[str, Any]:
+        """Get context from previous research notes and chat history."""
+        context = {
+            "notes_count": 0,
+            "history_count": 0,
+            "related_notes": [],
+            "related_messages": []
+        }
+        
+        try:
+            # Search research notes in ~/.decyphertek-ai/notes/
+            if self.notes_folder.exists():
+                for note_file in self.notes_folder.glob("*.txt"):
+                    content = note_file.read_text(encoding="utf-8")
+                    # Simple keyword matching
+                    if any(word.lower() in content.lower() for word in topic.split()):
+                        context["notes_count"] += 1
+                        context["related_notes"].append(note_file.name)
+            
+            # Search chat history
+            if self.chat_history_path.exists():
+                chat_history = json.loads(self.chat_history_path.read_text(encoding="utf-8"))
+                for msg in chat_history[-100:]:  # Check last 100 messages
+                    if any(word.lower() in msg.get("content", "").lower() for word in topic.split()):
+                        context["history_count"] += 1
+                        context["related_messages"].append(msg.get("content", "")[:100])
+                        
+        except Exception as e:
+            if getattr(self, "verbose", False):
+                print(f"[Adminotaur] Error getting research context: {e}")
+        
+        return context
+    
+    def _save_research_note(self, topic: str, web_results: str, summary: str, context: Dict[str, Any]) -> str:
+        """Save research findings to a note file in ~/.decyphertek-ai/notes/"""
+        try:
+            from datetime import datetime
+            
+            # Generate filename - can be anything.txt like "researching.txt"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_topic = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in topic)
+            safe_topic = safe_topic.replace(' ', '_')[:50]  # Limit length
+            filename = f"{timestamp}_{safe_topic}.txt"
+            filepath = self.notes_folder / filename
+            
+            # Prepare note content
+            note_content = f"""# Research Note: {topic}
+Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+## Summary
+{summary}
+
+## Original Web Search Results
+{web_results}
+
+## Context
+- Previous related notes: {context['notes_count']}
+- Related chat messages: {context['history_count']}
+
+## Related Notes
+{chr(10).join(f"- {note}" for note in context['related_notes'][:5]) if context['related_notes'] else "None"}
+
+---
+Generated by Adminotaur Research Mode
+"""
+            
+            # Write to file in ~/.decyphertek-ai/notes/
+            filepath.write_text(note_content, encoding="utf-8")
+            
+            return filename
+            
+        except Exception as e:
+            if getattr(self, "verbose", False):
+                print(f"[Adminotaur] Error saving research note: {e}")
+            return None
+    
+    def _save_chat_message(self, message: str, role: str) -> None:
+        """Save chat message to history for context."""
+        try:
+            # Load existing history
+            history = []
+            if self.chat_history_path.exists():
+                try:
+                    history = json.loads(self.chat_history_path.read_text(encoding="utf-8"))
+                except:
+                    history = []
+            
+            # Add new message
+            from datetime import datetime
+            history.append({
+                "timestamp": datetime.now().isoformat(),
+                "role": role,
+                "content": message
+            })
+            
+            # Keep only last 1000 messages
+            if len(history) > 1000:
+                history = history[-1000:]
+            
+            # Save history
+            self.chat_history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
+            
+        except Exception as e:
+            if getattr(self, "verbose", False):
+                print(f"[Adminotaur] Error saving chat message: {e}")
+    
+    def read_research_notes(self, topic: str = None) -> str:
+        """Read research notes from ~/.decyphertek-ai/notes/, optionally filtered by topic."""
+        try:
+            if not self.notes_folder.exists():
+                return "📚 No research notes found yet. Use `@research <topic>` to create your first research note!"
+            
+            notes = list(self.notes_folder.glob("*.txt"))
+            
+            if not notes:
+                return "📚 No research notes found yet. Use `@research <topic>` to create your first research note!"
+            
+            result_lines = [f"📚 **Research Notes** ({len(notes)} total)\n"]
+            
+            # Filter by topic if provided
+            if topic:
+                filtered_notes = []
+                for note_file in notes:
+                    content = note_file.read_text(encoding="utf-8")
+                    if any(word.lower() in content.lower() for word in topic.split()):
+                        filtered_notes.append(note_file)
+                notes = filtered_notes
+                result_lines.append(f"🔍 Filtered by: {topic}\n")
+            
+            if not notes:
+                return f"📚 No research notes found for topic: {topic}"
+            
+            # List notes with preview
+            for note_file in sorted(notes, reverse=True)[:10]:  # Show 10 most recent
+                content = note_file.read_text(encoding="utf-8")
+                # Extract title from content
+                lines = content.split('\n')
+                title = lines[0].replace('#', '').strip() if lines else note_file.name
+                
+                result_lines.append(f"### 📄 {note_file.name}")
+                result_lines.append(f"**{title}**")
+                result_lines.append(f"Preview: {content[:200]}...")
+                result_lines.append("")
+            
+            if len(notes) > 10:
+                result_lines.append(f"... and {len(notes) - 10} more notes")
+            
+            return "\n".join(result_lines)
+            
+        except Exception as e:
+            return f"❌ Error reading research notes: {e}"
 
 
 def main():
