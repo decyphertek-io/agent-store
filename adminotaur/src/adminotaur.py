@@ -402,9 +402,13 @@ class AdminotaurAgent:
             self._save_chat_message(response, "assistant")
             return response
         
-        # Check for @research mode
-        if user_message.startswith("@research"):
-            response = self._handle_research_mode(user_message)
+        # Check if research mode is enabled (via toggle or one-shot @research)
+        research_enabled = os.environ.get("RESEARCH_MODE_ENABLED", "0") in ("1", "true", "yes")
+        
+        if research_enabled:
+            # Strip @research prefix if present (one-shot mode)
+            clean_message = user_message.replace("@research", "").strip() if user_message.startswith("@research") else user_message
+            response = self._handle_research_mode(clean_message)
             self._save_chat_message(response, "assistant")
             return response
         
