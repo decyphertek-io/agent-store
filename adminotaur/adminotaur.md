@@ -50,7 +50,7 @@ Adminotaur is the core AI agent for the DecypherTek AI system, designed to inter
 - Subprocess for external process management
 
 ### File Structure
-- `adminotaur.py` - Main agent implementation
+- `adminotaur.agent` - Main agent implementation
 - `adminotaur.md` - This capabilities documentation
 - `adminotaur.json` - Agent configuration
 - `requirements.txt` - Python dependencies
