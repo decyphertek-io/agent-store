@@ -10,7 +10,7 @@
         "docs": "adminotaur.md"
       },
       "install_path": "~/.decyphertek.ai/agent-store/adminotaur/",
-      "enable_by_default": true
+      "enabled": true
     }
   }
 }
