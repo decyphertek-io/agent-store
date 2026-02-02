@@ -12,7 +12,8 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import glob
 
-from langchain.agents import AgentExecutor, create_react_agent
+from langchain.agents import create_react_agent
+from langchain.agents.agent import AgentExecutor
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.tools import Tool
