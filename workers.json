@@ -1,34 +1,15 @@
 {
-  "_comment": "Agent Store registry + library for Agent Workers used by DecypherTek AI",
   "_version": "1.0.0",
-  "_last_updated": "2026-02-02",
-
-  "registry": {
-    "name": "DecypherTek Agent Store",
-    "library_url": "https://github.com/decyphertek-io/agent-store",
-    "raw_url": "https://raw.githubusercontent.com/decyphertek-io/agent-store/main/workers.json"
-  },
-
-  "default_agent": "adminotaur",
-
   "agents": {
     "adminotaur": {
       "id": "adminotaur",
-      "name": "Adminotaur Supervisor Agent",
-      "description": "LangChain supervisor agent that coordinates worker agents and manages MCP skills",
-      "type": "supervisor",
-      "framework": "langchain",
-
-      "download_url": "https://raw.githubusercontent.com/decyphertek-io/agent-store/main/adminotaur/dist/adminotaur.agent",
-      "install_path": "~/.decyphertek.ai/agent-workers/adminotaur.agent",
-
-      "capabilities": [
-        "list_agent_workers",
-        "list_mcp_skills",
-        "system_health_check",
-        "get_agent_info"
-      ],
-
+      "repo_url": "https://github.com/decyphertek-io/agent-store",
+      "folder_path": "adminotaur/",
+      "files": {
+        "agent": "dist/adminotaur.agent",
+        "docs": "adminotaur.md"
+      },
+      "install_path": "~/.decyphertek.ai/agent-store/adminotaur/",
       "enable_by_default": true
     }
   }
