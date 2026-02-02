@@ -197,25 +197,33 @@ class Adminotaur:
     def _start_gateway(self) -> bool:
         """Start MCP Gateway as a background process"""
         try:
-            gateway_path = self.mcp_store_dir / "mcp-gateway" / "mcp-gateway.py"
+            gateway_dir = self.mcp_store_dir / "mcp-gateway"
+            gateway_executable = gateway_dir / "dist" / "mcp-gateway.mcp"
             
-            if not gateway_path.exists():
-                print(f"[ERROR] MCP Gateway not found at {gateway_path}", file=sys.stderr)
+            if not gateway_executable.exists():
+                print(f"[ERROR] MCP Gateway executable not found at {gateway_executable}", file=sys.stderr)
                 return False
             
-            # Start gateway as subprocess
-            subprocess.Popen(
-                [sys.executable, str(gateway_path)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+            # Start gateway executable as subprocess
+            process = subprocess.Popen(
+                [str(gateway_executable)],
+                cwd=str(gateway_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 start_new_session=True
             )
             
             # Wait for gateway to be ready (max 10 seconds)
-            for _ in range(20):
+            for i in range(20):
                 time.sleep(0.5)
                 if self._is_gateway_running():
+                    print(f"[ADMINOTAUR] Gateway started (PID: {process.pid})", file=sys.stderr)
                     return True
+            
+            # If not ready after 10 seconds, check if process is still running
+            if process.poll() is not None:
+                stderr = process.stderr.read().decode('utf-8')
+                print(f"[ERROR] Gateway process died: {stderr[:200]}", file=sys.stderr)
             
             return False
         except Exception as e:
