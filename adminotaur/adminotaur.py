@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Adminotaur - LangChain Supervisor Agent
+Adminotaur - LangGraph Supervisor Agent
 Coordinates worker agents and manages MCP skills for Decyphertek.ai
 """
 
@@ -8,17 +8,129 @@ import os
 import json
 import urllib.request
 import urllib.parse
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TypedDict, Annotated
 from pathlib import Path
 import glob
+import operator
 
-# No LangChain imports needed - routes to MCP Gateway
+from langgraph.graph import StateGraph, END
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.tools import tool
+
+
+# Global MCP Gateway configuration
+MCP_HOST = "localhost"
+MCP_PORT = 9000
+
+
+@tool
+def invoke_mcp_skill(skill: str, tool_name: str, params: dict) -> str:
+    """Call MCP Gateway to invoke a skill.
+    
+    Args:
+        skill: Name of the MCP skill (e.g., 'openrouter-ai', 'rag-chat')
+        tool_name: Name of the tool within the skill (e.g., 'chat_completion')
+        params: Parameters to pass to the tool
+        
+    Returns:
+        JSON response from MCP Gateway
+    """
+    try:
+        request_data = {
+            "skill": skill,
+            "tool": tool_name,
+            "params": params
+        }
+        url = f"http://{MCP_HOST}:{MCP_PORT}/invoke"
+        
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(request_data).encode('utf-8'),
+            headers={'Content-Type': 'application/json'}
+        )
+        
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            return json.dumps(result, indent=2)
+    except Exception as e:
+        return f"Error calling MCP Gateway: {str(e)}"
+
+
+@tool
+def check_system_health() -> str:
+    """Check Decyphertek.ai system health.
+    
+    Returns:
+        System health status report
+    """
+    app_dir = Path.home() / ".decyphertek.ai"
+    checks = {
+        "app_directory": app_dir.exists(),
+        "agent_store": (app_dir / "agent-store").exists(),
+        "mcp_store": (app_dir / "mcp-store").exists(),
+        "app_store": (app_dir / "app-store").exists(),
+        "configs": (app_dir / "configs").exists(),
+        "creds": (app_dir / "creds").exists(),
+    }
+    
+    status = "System Health Check:\n"
+    for component, healthy in checks.items():
+        status += f"  - {component}: {'✓ OK' if healthy else '✗ MISSING'}\n"
+    
+    all_healthy = all(checks.values())
+    status += f"\nOverall Status: {'✓ All systems operational' if all_healthy else '✗ Issues detected'}"
+    
+    return status
+
+
+@tool
+def list_available_agents() -> str:
+    """List all available agent workers in the agent store.
+    
+    Returns:
+        Comma-separated list of agent names
+    """
+    agent_store_dir = Path.home() / ".decyphertek.ai" / "agent-store"
+    if not agent_store_dir.exists():
+        return "No agent-store directory found"
+    
+    agents = [item.name for item in agent_store_dir.iterdir() if item.is_dir()]
+    
+    if not agents:
+        return "No agent workers found"
+    
+    return f"Available agent workers: {', '.join(agents)}"
+
+
+@tool
+def list_mcp_skills() -> str:
+    """List all available MCP skills in the MCP store.
+    
+    Returns:
+        Comma-separated list of skill names
+    """
+    mcp_store_dir = Path.home() / ".decyphertek.ai" / "mcp-store"
+    if not mcp_store_dir.exists():
+        return "No mcp-store directory found"
+    
+    skills = [item.name for item in mcp_store_dir.iterdir() if item.is_dir()]
+    
+    if not skills:
+        return "No MCP skills found"
+    
+    return f"Available MCP skills: {', '.join(skills)}"
+
+
+class AgentState(TypedDict):
+    """State for the supervisor agent graph"""
+    messages: Annotated[List, operator.add]
+    next: str
 
 
 class Adminotaur:
     """
-    LangChain-based supervisor agent for Decyphertek.ai
-    Coordinates worker agents, manages MCP skills, and ensures system health
+    LangGraph-based supervisor agent for Decyphertek.ai
+    Uses StateGraph to coordinate worker agents and MCP skills
     """
     
     def __init__(self):
@@ -37,10 +149,17 @@ class Adminotaur:
         self.ai_config = self._load_ai_config()
         self.context_data = self._load_context_files()
         
-        
         # MCP Gateway connection
         self.mcp_gateway_host = self.ai_config.get("mcp_gateway", {}).get("host", "localhost")
         self.mcp_gateway_port = self.ai_config.get("mcp_gateway", {}).get("port", 9000)
+        
+        # Update global MCP config for @tool functions
+        global MCP_HOST, MCP_PORT
+        MCP_HOST = self.mcp_gateway_host
+        MCP_PORT = self.mcp_gateway_port
+        
+        # Build LangGraph workflow
+        self.graph = self._build_graph()
         
     def _load_slash_commands(self) -> Dict[str, Any]:
         """Load slash commands configuration"""
@@ -292,9 +411,89 @@ class Adminotaur:
         except Exception as e:
             return f"Error routing to AI: {str(e)}"
     
+    def _build_graph(self) -> StateGraph:
+        """Build LangGraph StateGraph for agent workflow"""
+        workflow = StateGraph(AgentState)
+        
+        # Add nodes
+        workflow.add_node("supervisor", self._supervisor_node)
+        workflow.add_node("execute", self._execute_node)
+        
+        # Set entry point
+        workflow.set_entry_point("supervisor")
+        
+        # Add edges
+        workflow.add_edge("supervisor", "execute")
+        workflow.add_edge("execute", END)
+        
+        return workflow.compile()
+    
+    def _supervisor_node(self, state: AgentState) -> AgentState:
+        """Supervisor node that analyzes request and routes to appropriate action"""
+        messages = state["messages"]
+        last_message = messages[-1] if messages else None
+        
+        if not last_message:
+            return {"messages": [], "next": "execute"}
+        
+        user_input = last_message.content if hasattr(last_message, 'content') else str(last_message)
+        
+        # Determine routing
+        state["next"] = "execute"
+        return state
+    
+    def _execute_node(self, state: AgentState) -> AgentState:
+        """Execute node that processes the request using LangGraph tools"""
+        messages = state["messages"]
+        last_message = messages[-1] if messages else None
+        
+        if not last_message:
+            return state
+        
+        user_input = last_message.content if hasattr(last_message, 'content') else str(last_message)
+        
+        # Handle slash commands with builtin logic
+        if user_input.startswith("/"):
+            response = self._handle_slash_command(user_input)
+        else:
+            # Use invoke_mcp_skill tool for AI routing
+            provider = self.ai_config.get("default_provider", "openrouter-ai")
+            provider_config = self.ai_config.get("providers", {}).get(provider, {})
+            credential_service = provider_config.get("credential_service", "openrouter")
+            
+            # Get credential from MCP Gateway
+            cred_request = {
+                "action": "get_credential",
+                "service": credential_service
+            }
+            cred_response = self._call_mcp_gateway(json.dumps(cred_request))
+            
+            try:
+                cred_data = json.loads(cred_response)
+                if cred_data.get("status") == "success":
+                    api_key = cred_data.get("credential")
+                    
+                    # Use invoke_mcp_skill tool
+                    response = invoke_mcp_skill(
+                        skill=provider,
+                        tool_name="chat_completion",
+                        params={
+                            "messages": [{"role": "user", "content": user_input}],
+                            "api_key": api_key
+                        }
+                    )
+                else:
+                    response = f"Error: {cred_data.get('message', 'Failed to retrieve credential')}"
+            except Exception as e:
+                response = f"Error routing to AI: {str(e)}"
+        
+        # Add response to messages
+        state["messages"].append(AIMessage(content=response))
+        return state
+    
     def process(self, user_input: str) -> str:
         """
-        Process user input through routing system
+        Process user input through LangGraph workflow
         
         Args:
             user_input: User's request or query
@@ -302,7 +501,22 @@ class Adminotaur:
         Returns:
             Agent's response
         """
-        return self.route_request(user_input)
+        # Create initial state
+        initial_state = {
+            "messages": [HumanMessage(content=user_input)],
+            "next": ""
+        }
+        
+        # Run graph
+        result = self.graph.invoke(initial_state)
+        
+        # Extract response
+        messages = result.get("messages", [])
+        if messages and len(messages) > 1:
+            last_message = messages[-1]
+            return last_message.content if hasattr(last_message, 'content') else str(last_message)
+        
+        return "No response generated"
     
 def main():
     """CLI entry point for subprocess execution"""
