@@ -33,7 +33,7 @@ def invoke_mcp_skill(skill: str, tool_name: str, params: dict) -> str:
         params: Parameters to pass to the tool
         
     Returns:
-        JSON response from MCP Gateway
+        Response content from MCP Gateway skill
     """
     try:
         request_data = {
@@ -51,7 +51,10 @@ def invoke_mcp_skill(skill: str, tool_name: str, params: dict) -> str:
         
         with urllib.request.urlopen(req, timeout=30) as response:
             result = json.loads(response.read().decode('utf-8'))
-            return json.dumps(result, indent=2)
+            # Extract the actual response content
+            if isinstance(result, dict):
+                return result.get("response", result.get("content", str(result)))
+            return str(result)
     except Exception as e:
         return f"Error calling MCP Gateway: {str(e)}"
 
