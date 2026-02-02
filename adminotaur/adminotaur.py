@@ -12,13 +12,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import glob
 
-from langchain.agents import create_react_agent
-from langchain_core.agents import AgentExecutor
-from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.tools import Tool
-from langchain.memory import ConversationBufferMemory
-from langchain_core.messages import SystemMessage, HumanMessage
+# No LangChain imports needed - routes to MCP Gateway
 
 
 class Adminotaur:
@@ -27,14 +21,11 @@ class Adminotaur:
     Coordinates worker agents, manages MCP skills, and ensures system health
     """
     
-    def __init__(self, llm=None):
+    def __init__(self):
         """
         Initialize Adminotaur supervisor agent
-        
-        Args:
-            llm: LangChain LLM instance (provided by CLI/MCP Gateway)
+        Routes all AI calls to MCP Gateway
         """
-        self.llm = llm
         self.app_dir = Path.home() / ".decyphertek.ai"
         self.agent_store_dir = self.app_dir / "agent-store"
         self.mcp_store_dir = self.app_dir / "mcp-store"
@@ -47,24 +38,9 @@ class Adminotaur:
         self.context_data = self._load_context_files()
         
         
-        # Initialize memory
-        self.memory = ConversationBufferMemory(
-            memory_key="chat_history",
-            return_messages=True
-        )
-        
-        # Initialize tools
-        self.tools = self._initialize_tools()
-        
         # MCP Gateway connection
         self.mcp_gateway_host = self.ai_config.get("mcp_gateway", {}).get("host", "localhost")
         self.mcp_gateway_port = self.ai_config.get("mcp_gateway", {}).get("port", 9000)
-        
-        # Create agent if LLM provided
-        if self.llm:
-            self.agent = self._create_agent()
-        else:
-            self.agent = None
         
     def _load_slash_commands(self) -> Dict[str, Any]:
         """Load slash commands configuration"""
@@ -109,77 +85,6 @@ class Adminotaur:
                     context[str(md_path)] = md_path.read_text()
         
         return context
-    
-    def _initialize_tools(self) -> List[Tool]:
-        """Initialize available tools for the agent"""
-        tools = [
-            Tool(
-                name="list_agent_workers",
-                func=self._list_agent_workers,
-                description="List all available agent workers in the agent-store directory"
-            ),
-            Tool(
-                name="list_mcp_skills",
-                func=self._list_mcp_skills,
-                description="List all available MCP skills in the mcp-store directory"
-            ),
-            Tool(
-                name="system_health_check",
-                func=self._system_health_check,
-                description="Perform a system health check on Decyphertek.ai components"
-            ),
-            Tool(
-                name="get_agent_info",
-                func=self._get_agent_info,
-                description="Get information about a specific agent worker. Input should be the agent name."
-            ),
-            Tool(
-                name="call_mcp_gateway",
-                func=self._call_mcp_gateway,
-                description="Call MCP Gateway to invoke skills or manage credentials. Input should be JSON with action and parameters."
-            ),
-        ]
-        return tools
-    
-    def _create_agent(self) -> AgentExecutor:
-        """Create the LangChain agent with tools"""
-        system_prompt = """You are Adminotaur, the supervisor agent for Decyphertek.ai.
-
-Your responsibilities:
-1. Coordinate and manage worker agents
-2. Monitor system health and component status
-3. Route tasks to appropriate worker agents or MCP skills
-4. Handle errors and implement recovery strategies
-5. Ensure all components work together smoothly
-
-You act as a system administrator - you're knowledgeable, efficient, and proactive.
-When users ask for help, analyze their request and determine:
-- Which worker agents are needed
-- Which MCP skills should be used
-- What the best approach is to solve their problem
-
-Always provide clear, concise responses and take action when needed.
-"""
-        
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
-        
-        agent = create_react_agent(self.llm, self.tools, prompt)
-        
-        agent_executor = AgentExecutor(
-            agent=agent,
-            tools=self.tools,
-            memory=self.memory,
-            verbose=True,
-            handle_parsing_errors=True,
-            max_iterations=5
-        )
-        
-        return agent_executor
     
     def _call_mcp_gateway(self, request: str) -> str:
         """Call MCP Gateway to invoke skills"""
@@ -399,11 +304,6 @@ Always provide clear, concise responses and take action when needed.
         """
         return self.route_request(user_input)
     
-    def reset_memory(self):
-        """Reset conversation memory"""
-        self.memory.clear()
-
-
 def main():
     """CLI entry point for subprocess execution"""
     import sys
@@ -414,8 +314,8 @@ def main():
     
     user_input = " ".join(sys.argv[1:])
     
-    # Initialize Adminotaur without LLM (uses MCP Gateway routing)
-    agent = Adminotaur(llm=None)
+    # Initialize Adminotaur (uses MCP Gateway routing)
+    agent = Adminotaur()
     
     # Process input and return response
     response = agent.process(user_input)
