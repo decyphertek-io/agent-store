@@ -12,6 +12,9 @@ from typing import List, Dict, Any, Optional, TypedDict, Annotated
 from pathlib import Path
 import glob
 import operator
+import subprocess
+import time
+import sys
 
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
@@ -161,6 +164,9 @@ class Adminotaur:
         MCP_HOST = self.mcp_gateway_host
         MCP_PORT = self.mcp_gateway_port
         
+        # Ensure MCP Gateway is running
+        self._ensure_gateway_running()
+        
         # Build LangGraph workflow
         self.graph = self._build_graph()
         
@@ -177,6 +183,53 @@ class Adminotaur:
         if config_file.exists():
             return json.loads(config_file.read_text())
         return {}
+    
+    def _is_gateway_running(self) -> bool:
+        """Check if MCP Gateway is running"""
+        try:
+            url = f"http://{self.mcp_gateway_host}:{self.mcp_gateway_port}/health"
+            req = urllib.request.Request(url, method='GET')
+            with urllib.request.urlopen(req, timeout=2) as response:
+                return response.getcode() == 200
+        except:
+            return False
+    
+    def _start_gateway(self) -> bool:
+        """Start MCP Gateway as a background process"""
+        try:
+            gateway_path = self.mcp_store_dir / "mcp-gateway" / "mcp-gateway.py"
+            
+            if not gateway_path.exists():
+                print(f"[ERROR] MCP Gateway not found at {gateway_path}", file=sys.stderr)
+                return False
+            
+            # Start gateway as subprocess
+            subprocess.Popen(
+                [sys.executable, str(gateway_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+            
+            # Wait for gateway to be ready (max 10 seconds)
+            for _ in range(20):
+                time.sleep(0.5)
+                if self._is_gateway_running():
+                    return True
+            
+            return False
+        except Exception as e:
+            print(f"[ERROR] Failed to start MCP Gateway: {e}", file=sys.stderr)
+            return False
+    
+    def _ensure_gateway_running(self):
+        """Ensure MCP Gateway is running, start it if not"""
+        if not self._is_gateway_running():
+            print("[ADMINOTAUR] MCP Gateway not running, starting it...", file=sys.stderr)
+            if self._start_gateway():
+                print("[ADMINOTAUR] MCP Gateway started successfully", file=sys.stderr)
+            else:
+                print("[ADMINOTAUR] Failed to start MCP Gateway", file=sys.stderr)
     
     def _load_context_files(self) -> Dict[str, str]:
         """Load context from JSON and MD files for self-awareness"""
