@@ -12,10 +12,11 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import glob
 
-from langchain.agents import AgentExecutor, create_react_agent
+from langchain.agents import create_react_agent
+from langchain_core.agents import AgentExecutor
 from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.tools import Tool
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.tools import Tool
 from langchain.memory import ConversationBufferMemory
 from langchain_core.messages import SystemMessage, HumanMessage
 
