@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import glob
 
-from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain.agents import AgentExecutor, create_react_agent
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.tools import Tool
@@ -167,7 +167,7 @@ Always provide clear, concise responses and take action when needed.
             MessagesPlaceholder(variable_name="agent_scratchpad"),
         ])
         
-        agent = create_openai_tools_agent(self.llm, self.tools, prompt)
+        agent = create_react_agent(self.llm, self.tools, prompt)
         
         agent_executor = AgentExecutor(
             agent=agent,
@@ -404,12 +404,21 @@ Always provide clear, concise responses and take action when needed.
 
 
 def main():
-    """Example usage - LLM must be provided by CLI/MCP Gateway"""
-    print("Adminotaur agent")
-    print("This agent is designed to be initialized by the Decyphertek CLI")
-    print("LLM credentials are managed by the MCP Gateway")
-    print("\nTo use: Import Adminotaur class and provide LLM instance")
-    print("Example: adminotaur = Adminotaur(llm=your_llm_instance)")
+    """CLI entry point for subprocess execution"""
+    import sys
+    
+    if len(sys.argv) < 2:
+        print("Usage: adminotaur.agent <user_input>")
+        sys.exit(1)
+    
+    user_input = " ".join(sys.argv[1:])
+    
+    # Initialize Adminotaur without LLM (uses MCP Gateway routing)
+    agent = Adminotaur(llm=None)
+    
+    # Process input and return response
+    response = agent.process(user_input)
+    print(response)
 
 
 if __name__ == "__main__":
