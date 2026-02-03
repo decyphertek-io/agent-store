@@ -17,7 +17,7 @@ echo ""
 echo "Installing dependencies with uv (Python 3.12)..."
 uv venv --clear --python 3.12
 source .venv/bin/activate
-uv pip install pyinstaller langchain langchain-openai langchain-core openai
+uv pip install pyinstaller langchain langchain-openai langchain-core langgraph openai
 
 echo ""
 echo "Cleaning previous build..."

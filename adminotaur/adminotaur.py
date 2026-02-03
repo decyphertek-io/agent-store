@@ -6,60 +6,76 @@ Coordinates worker agents and manages MCP skills for Decyphertek.ai
 
 import os
 import json
-import urllib.request
-import urllib.parse
 from typing import List, Dict, Any, Optional, TypedDict, Annotated
 from pathlib import Path
 import glob
 import operator
 import subprocess
-import time
 import sys
 
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.tools import tool
-
-
-# Global MCP Gateway configuration
-MCP_HOST = "localhost"
-MCP_PORT = 9000
+from langchain_openai import ChatOpenAI
 
 
 @tool
-def invoke_mcp_skill(skill: str, tool_name: str, params: dict) -> str:
-    """Call MCP Gateway to invoke a skill.
+def web_search(query: str) -> str:
+    """Search the web for information.
     
     Args:
-        skill: Name of the MCP skill (e.g., 'openrouter-ai', 'rag-chat')
-        tool_name: Name of the tool within the skill (e.g., 'chat_completion')
-        params: Parameters to pass to the tool
+        query: Search query
         
     Returns:
-        Response content from MCP Gateway skill
+        Search results
     """
     try:
-        request_data = {
-            "skill": skill,
-            "tool": tool_name,
-            "params": params
-        }
-        url = f"http://{MCP_HOST}:{MCP_PORT}/invoke"
+        skill_path = Path.home() / ".decyphertek.ai" / "mcp-store" / "web-search" / "web.mcp"
         
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(request_data).encode('utf-8'),
-            headers={'Content-Type': 'application/json'}
+        if not skill_path.exists():
+            return f"Error: web-search skill not found"
+        
+        result = subprocess.run(
+            [str(skill_path), query],
+            capture_output=True,
+            text=True,
+            timeout=30
         )
         
-        with urllib.request.urlopen(req, timeout=30) as response:
-            result = json.loads(response.read().decode('utf-8'))
-            # Extract the actual response content
-            if isinstance(result, dict):
-                return result.get("response", result.get("content", str(result)))
-            return str(result)
+        return result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
     except Exception as e:
-        return f"Error calling MCP Gateway: {str(e)}"
+        return f"Error: {str(e)}"
+
+
+@tool
+def rag_chat(query: str, context: str = "") -> str:
+    """Query RAG system with context.
+    
+    Args:
+        query: User query
+        context: Optional context
+        
+    Returns:
+        RAG response
+    """
+    try:
+        skill_path = Path.home() / ".decyphertek.ai" / "mcp-store" / "rag-chat" / "rag.mcp"
+        
+        if not skill_path.exists():
+            return f"Error: rag-chat skill not found"
+        
+        input_data = json.dumps({"query": query, "context": context})
+        result = subprocess.run(
+            [str(skill_path)],
+            input=input_data,
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        return result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 
 @tool
@@ -142,7 +158,7 @@ class Adminotaur:
     def __init__(self):
         """
         Initialize Adminotaur supervisor agent
-        Routes all AI calls to MCP Gateway
+        Uses LangChain for OpenRouter AI, LangGraph for orchestration
         """
         self.app_dir = Path.home() / ".decyphertek.ai"
         self.agent_store_dir = self.app_dir / "agent-store"
@@ -155,17 +171,18 @@ class Adminotaur:
         self.ai_config = self._load_ai_config()
         self.context_data = self._load_context_files()
         
-        # MCP Gateway connection
-        self.mcp_gateway_host = self.ai_config.get("mcp_gateway", {}).get("host", "localhost")
-        self.mcp_gateway_port = self.ai_config.get("mcp_gateway", {}).get("port", 9000)
+        # Initialize LangChain LLM for OpenRouter
+        api_key = os.environ.get('OPENROUTER_API_KEY', '')
+        provider_config = self.ai_config.get("providers", {}).get("openrouter-ai", {})
+        model = provider_config.get("default_model", "anthropic/claude-3.5-sonnet")
+        base_url = provider_config.get("base_url", "https://openrouter.ai/api/v1")
         
-        # Update global MCP config for @tool functions
-        global MCP_HOST, MCP_PORT
-        MCP_HOST = self.mcp_gateway_host
-        MCP_PORT = self.mcp_gateway_port
-        
-        # Ensure MCP Gateway is running
-        self._ensure_gateway_running()
+        self.llm = ChatOpenAI(
+            model=model,
+            openai_api_key=api_key,
+            openai_api_base=base_url,
+            temperature=0.7
+        )
         
         # Build LangGraph workflow
         self.graph = self._build_graph()
@@ -183,61 +200,6 @@ class Adminotaur:
         if config_file.exists():
             return json.loads(config_file.read_text())
         return {}
-    
-    def _is_gateway_running(self) -> bool:
-        """Check if MCP Gateway is running"""
-        try:
-            url = f"http://{self.mcp_gateway_host}:{self.mcp_gateway_port}/health"
-            req = urllib.request.Request(url, method='GET')
-            with urllib.request.urlopen(req, timeout=2) as response:
-                return response.getcode() == 200
-        except:
-            return False
-    
-    def _start_gateway(self) -> bool:
-        """Start MCP Gateway as a background process"""
-        try:
-            gateway_dir = self.mcp_store_dir / "mcp-gateway"
-            gateway_executable = gateway_dir / "dist" / "mcp-gateway.mcp"
-            
-            if not gateway_executable.exists():
-                print(f"[ERROR] MCP Gateway executable not found at {gateway_executable}", file=sys.stderr)
-                return False
-            
-            # Start gateway executable as subprocess
-            process = subprocess.Popen(
-                [str(gateway_executable)],
-                cwd=str(gateway_dir),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                start_new_session=True
-            )
-            
-            # Wait for gateway to be ready (max 10 seconds)
-            for i in range(20):
-                time.sleep(0.5)
-                if self._is_gateway_running():
-                    print(f"[ADMINOTAUR] Gateway started (PID: {process.pid})", file=sys.stderr)
-                    return True
-            
-            # If not ready after 10 seconds, check if process is still running
-            if process.poll() is not None:
-                stderr = process.stderr.read().decode('utf-8')
-                print(f"[ERROR] Gateway process died: {stderr[:200]}", file=sys.stderr)
-            
-            return False
-        except Exception as e:
-            print(f"[ERROR] Failed to start MCP Gateway: {e}", file=sys.stderr)
-            return False
-    
-    def _ensure_gateway_running(self):
-        """Ensure MCP Gateway is running, start it if not"""
-        if not self._is_gateway_running():
-            print("[ADMINOTAUR] MCP Gateway not running, starting it...", file=sys.stderr)
-            if self._start_gateway():
-                print("[ADMINOTAUR] MCP Gateway started successfully", file=sys.stderr)
-            else:
-                print("[ADMINOTAUR] Failed to start MCP Gateway", file=sys.stderr)
     
     def _load_context_files(self) -> Dict[str, str]:
         """Load context from JSON and MD files for self-awareness"""
@@ -268,25 +230,6 @@ class Adminotaur:
                     context[str(md_path)] = md_path.read_text()
         
         return context
-    
-    def _call_mcp_gateway(self, request: str) -> str:
-        """Call MCP Gateway to invoke skills"""
-        try:
-            request_data = json.loads(request) if isinstance(request, str) else request
-            url = f"http://{self.mcp_gateway_host}:{self.mcp_gateway_port}/invoke"
-            
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(request_data).encode('utf-8'),
-                headers={'Content-Type': 'application/json'}
-            )
-            
-            with urllib.request.urlopen(req, timeout=30) as response:
-                result = json.loads(response.read().decode('utf-8'))
-                return json.dumps(result, indent=2)
-        
-        except Exception as e:
-            return f"Error calling MCP Gateway: {str(e)}"
     
     def _list_agent_workers(self, query: str = "") -> str:
         """List available agent workers"""
@@ -419,61 +362,10 @@ class Adminotaur:
         """Show current configuration"""
         config_text = "Current Configuration:\n\n"
         config_text += f"AI Provider: {self.ai_config.get('default_provider', 'Not set')}\n"
-        config_text += f"MCP Gateway: {self.mcp_gateway_host}:{self.mcp_gateway_port}\n"
+        config_text += f"Model: {self.ai_config.get('providers', {}).get('openrouter-ai', {}).get('default_model', 'Not set')}\n"
         config_text += f"Slash Commands: {len(self.slash_commands.get('commands', {}))} loaded\n"
         return config_text
     
-    def _route_to_skill(self, cmd_config: Dict[str, Any], query: str) -> str:
-        """Route request to MCP skill via gateway"""
-        skill_name = cmd_config.get("mcp_skill")
-        tools = cmd_config.get("tools", [])
-        
-        # Call first tool with query
-        if tools:
-            request = {
-                "skill": skill_name,
-                "tool": tools[0],
-                "params": {"query": query}
-            }
-            return self._call_mcp_gateway(json.dumps(request))
-        
-        return f"No tools configured for skill: {skill_name}"
-    
-    def _route_to_ai(self, user_input: str) -> str:
-        """Route to default AI provider (OpenRouter via MCP Gateway)"""
-        try:
-            provider = self.ai_config.get("default_provider", "openrouter-ai")
-            provider_config = self.ai_config.get("providers", {}).get(provider, {})
-            credential_service = provider_config.get("credential_service", "openrouter")
-            
-            # Get encrypted credential from MCP Gateway
-            cred_request = {
-                "action": "get_credential",
-                "service": credential_service
-            }
-            cred_response = self._call_mcp_gateway(json.dumps(cred_request))
-            
-            # Parse credential response
-            try:
-                cred_data = json.loads(cred_response)
-                if cred_data.get("status") != "success":
-                    return f"Error: {cred_data.get('message', 'Failed to retrieve credential')}"
-                api_key = cred_data.get("credential")
-            except:
-                return "Error: Failed to retrieve encrypted credential from MCP Gateway"
-            
-            # Call AI skill with decrypted credential
-            request = {
-                "skill": provider,
-                "tool": "chat_completion",
-                "params": {
-                    "messages": [{"role": "user", "content": user_input}],
-                    "api_key": api_key
-                }
-            }
-            return self._call_mcp_gateway(json.dumps(request))
-        except Exception as e:
-            return f"Error routing to AI: {str(e)}"
     
     def _build_graph(self) -> StateGraph:
         """Build LangGraph StateGraph for agent workflow"""
@@ -507,7 +399,7 @@ class Adminotaur:
         return state
     
     def _execute_node(self, state: AgentState) -> AgentState:
-        """Execute node that processes the request using LangGraph tools"""
+        """Execute node that processes the request using LangChain LLM"""
         messages = state["messages"]
         last_message = messages[-1] if messages else None
         
@@ -520,36 +412,12 @@ class Adminotaur:
         if user_input.startswith("/"):
             response = self._handle_slash_command(user_input)
         else:
-            # Use invoke_mcp_skill tool for AI routing
-            provider = self.ai_config.get("default_provider", "openrouter-ai")
-            provider_config = self.ai_config.get("providers", {}).get(provider, {})
-            credential_service = provider_config.get("credential_service", "openrouter")
-            
-            # Get credential from MCP Gateway
-            cred_request = {
-                "action": "get_credential",
-                "service": credential_service
-            }
-            cred_response = self._call_mcp_gateway(json.dumps(cred_request))
-            
+            # Use LangChain LLM directly for AI responses
             try:
-                cred_data = json.loads(cred_response)
-                if cred_data.get("status") == "success":
-                    api_key = cred_data.get("credential")
-                    
-                    # Use invoke_mcp_skill tool
-                    response = invoke_mcp_skill(
-                        skill=provider,
-                        tool_name="chat_completion",
-                        params={
-                            "messages": [{"role": "user", "content": user_input}],
-                            "api_key": api_key
-                        }
-                    )
-                else:
-                    response = f"Error: {cred_data.get('message', 'Failed to retrieve credential')}"
+                ai_response = self.llm.invoke([HumanMessage(content=user_input)])
+                response = ai_response.content
             except Exception as e:
-                response = f"Error routing to AI: {str(e)}"
+                response = f"Error: {str(e)}"
         
         # Add response to messages
         state["messages"].append(AIMessage(content=response))
