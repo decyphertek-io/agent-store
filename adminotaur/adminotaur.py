@@ -333,11 +333,27 @@ class Adminotaur:
         if cmd_config.get("builtin"):
             return self._handle_builtin_command(command, query)
         
-        # Handle MCP skill commands
+        # Handle MCP skill commands with AI integration
         if "mcp_skill" in cmd_config:
-            return self._route_to_skill(cmd_config, query)
+            skill_name = cmd_config.get("mcp_skill")
+            
+            # Call MCP skill to get context
+            if skill_name == "web-search":
+                skill_result = web_search(query)
+            elif skill_name == "rag-chat":
+                skill_result = rag_chat(query)
+            else:
+                return f"Unknown MCP skill: {skill_name}"
+            
+            # Pass skill result as context to LangChain LLM
+            try:
+                prompt = f"Based on this information:\n\n{skill_result}\n\nUser query: {query}\n\nProvide a helpful response:"
+                ai_response = self.llm.invoke([HumanMessage(content=prompt)])
+                return ai_response.content
+            except Exception as e:
+                return f"Error: {str(e)}"
         
-        return "Command not implemented"
+        return f"Command {command} is not properly configured"
     
     def _handle_builtin_command(self, command: str, query: str) -> str:
         """Handle builtin slash commands"""
