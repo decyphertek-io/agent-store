@@ -1,0 +1,10 @@
+agents:
+  adminotaur:
+    id: adminotaur
+    repo_url: https://github.com/decyphertek-io/agent-store
+    folder_path: adminotaur/
+    executable: dist/adminotaur.agent
+    install_path: ~/.decyphertek.ai/agent-store/adminotaur/
+    credentials: openrouter
+    env_mapping: OPENROUTER_API_KEY
+    enabled: true
