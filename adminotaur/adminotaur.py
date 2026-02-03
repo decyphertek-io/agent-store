@@ -15,97 +15,9 @@ import sys
 
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 
 
-@tool
-def web_search(query: str) -> str:
-    """Search the web for information.
-    
-    Args:
-        query: Search query
-        
-    Returns:
-        Search results
-    """
-    try:
-        skill_path = Path.home() / ".decyphertek.ai" / "mcp-store" / "web-search" / "web.mcp"
-        
-        if not skill_path.exists():
-            return f"Error: web-search skill not found"
-        
-        result = subprocess.run(
-            [str(skill_path), query],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        
-        return result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-
-@tool
-def rag_chat(query: str, context: str = "") -> str:
-    """Query RAG system with context.
-    
-    Args:
-        query: User query
-        context: Optional context
-        
-    Returns:
-        RAG response
-    """
-    try:
-        skill_path = Path.home() / ".decyphertek.ai" / "mcp-store" / "rag-chat" / "rag.mcp"
-        
-        if not skill_path.exists():
-            return f"Error: rag-chat skill not found"
-        
-        input_data = json.dumps({"query": query, "context": context})
-        result = subprocess.run(
-            [str(skill_path)],
-            input=input_data,
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        
-        return result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
-    except Exception as e:
-        return f"Error: {str(e)}"
-
-
-@tool
-def check_system_health() -> str:
-    """Check Decyphertek.ai system health.
-    
-    Returns:
-        System health status report
-    """
-    app_dir = Path.home() / ".decyphertek.ai"
-    checks = {
-        "app_directory": app_dir.exists(),
-        "agent_store": (app_dir / "agent-store").exists(),
-        "mcp_store": (app_dir / "mcp-store").exists(),
-        "app_store": (app_dir / "app-store").exists(),
-        "configs": (app_dir / "configs").exists(),
-        "creds": (app_dir / "creds").exists(),
-    }
-    
-    status = "System Health Check:\n"
-    for component, healthy in checks.items():
-        status += f"  - {component}: {'✓ OK' if healthy else '✗ MISSING'}\n"
-    
-    all_healthy = all(checks.values())
-    status += f"\nOverall Status: {'✓ All systems operational' if all_healthy else '✗ Issues detected'}"
-    
-    return status
-
-
-@tool
 def list_available_agents() -> str:
     """List all available agent workers in the agent store.
     
@@ -337,13 +249,8 @@ class Adminotaur:
         if "mcp_skill" in cmd_config:
             skill_name = cmd_config.get("mcp_skill")
             
-            # Call MCP skill to get context
-            if skill_name == "web-search":
-                skill_result = web_search(query)
-            elif skill_name == "rag-chat":
-                skill_result = rag_chat(query)
-            else:
-                return f"Unknown MCP skill: {skill_name}"
+            # Dynamically call MCP skill from registry
+            skill_result = self._call_mcp_skill(skill_name, query)
             
             # Pass skill result as context to LangChain LLM
             try:
@@ -354,6 +261,48 @@ class Adminotaur:
                 return f"Error: {str(e)}"
         
         return f"Command {command} is not properly configured"
+    
+    def _call_mcp_skill(self, skill_name: str, query: str) -> str:
+        """Dynamically call MCP skill executable from registry"""
+        try:
+            # Load skills registry
+            skills_registry_path = self.mcp_store_dir / "skills.json"
+            if not skills_registry_path.exists():
+                return f"Error: skills.json registry not found"
+            
+            skills_data = json.loads(skills_registry_path.read_text())
+            skills = skills_data.get("skills", {})
+            
+            if skill_name not in skills:
+                return f"Error: skill '{skill_name}' not found in registry"
+            
+            skill_config = skills[skill_name]
+            
+            # Get executable path from registry
+            executable_file = skill_config.get("files", {}).get("executable", "")
+            if not executable_file:
+                return f"Error: no executable defined for skill '{skill_name}'"
+            
+            # Construct full path to executable
+            skill_dir = self.mcp_store_dir / skill_name
+            executable_name = executable_file.split("/")[-1]
+            skill_path = skill_dir / executable_name
+            
+            if not skill_path.exists():
+                return f"Error: skill executable not found at {skill_path}"
+            
+            # Execute skill with query
+            result = subprocess.run(
+                [str(skill_path), query],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            return result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
+        
+        except Exception as e:
+            return f"Error calling MCP skill: {str(e)}"
     
     def _handle_builtin_command(self, command: str, query: str) -> str:
         """Handle builtin slash commands"""
