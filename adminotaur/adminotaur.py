@@ -36,7 +36,6 @@ def list_available_agents() -> str:
     return f"Available agent workers: {', '.join(agents)}"
 
 
-@tool
 def list_mcp_skills() -> str:
     """List all available MCP skills in the MCP store.
     
