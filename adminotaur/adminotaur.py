@@ -262,43 +262,65 @@ class Adminotaur:
         return f"Command {command} is not properly configured"
     
     def _call_mcp_skill(self, skill_name: str, query: str) -> str:
-        """Dynamically call MCP skill executable from registry"""
+        """Call MCP skill via MCP protocol using server started by CLI"""
         try:
-            # Load skills registry
-            skills_registry_path = self.mcp_store_dir / "skills.json"
-            if not skills_registry_path.exists():
-                return f"Error: skills.json registry not found"
+            # Check if CLI started an MCP server for us
+            mcp_server_pid = os.environ.get("MCP_SERVER_PID")
+            mcp_skill_name = os.environ.get("MCP_SKILL_NAME")
             
-            skills_data = json.loads(skills_registry_path.read_text())
-            skills = skills_data.get("skills", {})
+            if not mcp_server_pid or mcp_skill_name != skill_name:
+                return f"Error: MCP server not started for skill '{skill_name}'"
             
-            if skill_name not in skills:
-                return f"Error: skill '{skill_name}' not found in registry"
+            # Get MCP server process via /proc (Linux)
+            proc_path = Path(f"/proc/{mcp_server_pid}")
+            if not proc_path.exists():
+                return f"Error: MCP server process {mcp_server_pid} not found"
             
-            skill_config = skills[skill_name]
+            # Communicate with MCP server via MCP protocol
+            # For now, use a simple approach: call the tool directly
+            # TODO: Implement full MCP JSON-RPC protocol communication
             
-            # Get executable path from registry
-            executable_file = skill_config.get("files", {}).get("executable", "")
-            if not executable_file:
-                return f"Error: no executable defined for skill '{skill_name}'"
+            # Construct MCP JSON-RPC request
+            request = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {
+                    "name": "search" if skill_name == "web-search" else "search_news",
+                    "arguments": {"query": query} if skill_name == "web-search" else {"text": query}
+                }
+            }
             
-            # Construct full path to executable
+            # For now, fall back to direct execution until MCP client is implemented
+            # This is a temporary bridge solution
             skill_dir = self.mcp_store_dir / skill_name
-            executable_name = executable_file.split("/")[-1]
+            executable_name = list(skill_dir.glob("*.mcp"))[0].name if list(skill_dir.glob("*.mcp")) else None
+            
+            if not executable_name:
+                return f"Error: MCP executable not found for skill '{skill_name}'"
+            
             skill_path = skill_dir / executable_name
             
-            if not skill_path.exists():
-                return f"Error: skill executable not found at {skill_path}"
-            
-            # Execute skill with query
+            # Execute with MCP protocol simulation
+            # Pass query as JSON-RPC via stdin
             result = subprocess.run(
-                [str(skill_path), query],
+                [str(skill_path)],
+                input=json.dumps(request),
                 capture_output=True,
                 text=True,
                 timeout=30
             )
             
-            return result.stdout if result.returncode == 0 else f"Error: {result.stderr}"
+            if result.returncode == 0:
+                try:
+                    response = json.loads(result.stdout)
+                    if "result" in response:
+                        return json.dumps(response["result"], indent=2)
+                    return result.stdout
+                except:
+                    return result.stdout
+            else:
+                return f"Error: {result.stderr}"
         
         except Exception as e:
             return f"Error calling MCP skill: {str(e)}"
